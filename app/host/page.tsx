@@ -49,74 +49,83 @@ const CreateGamePage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 p-8 flex items-center justify-center">
+    <div className="min-h-screen bg-gradient-to-br from-pink-500 via-red-500 to-orange-500 p-8 flex items-center justify-center">
       <div className="w-full max-w-md">
-        <h1 className="text-3xl font-bold text-center text-gray-800 mb-8">
-          ビンゴ大会を作成
+        <h1 className="text-4xl font-bold text-center text-white mb-8 drop-shadow-lg">
+          ビンゴ<span className="text-yellow-300">大会</span>を作成
         </h1>
         
-        <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-lg p-8 space-y-6">
-          <div className="space-y-2">
-            <label htmlFor="gameName" className="block text-sm font-medium text-gray-700">
-              大会名
-            </label>
-            <input
-              type="text"
-              id="gameName"
-              name="gameName"
-              value={formData.gameName}
-              onChange={handleChange}
-              className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="みんなでビンゴ！"
-            />
+        <div className="w-full overflow-hidden rounded-xl shadow-2xl">
+          <div className="bg-gradient-to-r from-pink-500/70 to-orange-400/70 p-4 backdrop-blur-sm border-t border-l border-r border-white/20">
+            <h2 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-500 drop-shadow-md">
+              大会情報を入力
+            </h2>
           </div>
+          
+          <form onSubmit={handleSubmit} className="bg-white/30 backdrop-blur-md p-6 space-y-6 border-b border-l border-r border-white/20">
+            <div className="space-y-2">
+              <label htmlFor="gameName" className="block text-lg font-medium text-white drop-shadow-sm">
+                大会名
+              </label>
+              <input
+                type="text"
+                id="gameName"
+                name="gameName"
+                value={formData.gameName}
+                onChange={handleChange}
+                className="w-full px-4 py-3 rounded-lg border border-white/40 bg-white/20 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-yellow-400 text-white placeholder-white/60"
+                placeholder="みんなでビンゴ！"
+              />
+            </div>
 
-          <div className="space-y-2">
-            <label htmlFor="maxPlayers" className="block text-sm font-medium text-gray-900">
-              参加人数
-            </label>
-            <input
-              type="number"
-              id="maxPlayers"
-              name="maxPlayers"
-              value={formData.maxPlayers}
-              onChange={handleChange}
-              min="2"
-              className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-              placeholder="10"
-            />
-          </div>
+            <div className="space-y-2">
+              <label htmlFor="maxPlayers" className="block text-lg font-medium text-white drop-shadow-sm">
+                参加人数
+              </label>
+              <input
+                type="number"
+                id="maxPlayers"
+                name="maxPlayers"
+                value={formData.maxPlayers}
+                onChange={handleChange}
+                min="2"
+                className="w-full px-4 py-3 rounded-lg border border-white/40 bg-white/20 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-yellow-400 text-white placeholder-white/60"
+                placeholder="10"
+              />
+            </div>
 
-          <div className="space-y-2">
-            <label htmlFor="password" className="block text-sm font-medium text-gray-900">
-              合言葉
-            </label>
-            <input
-              type="text"
-              id="password"
-              name="password"
-              value={formData.password}
-              onChange={handleChange}
-              className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="あいことば123"
-            />
-          </div>
+            <div className="space-y-2">
+              <label htmlFor="password" className="block text-lg font-medium text-white drop-shadow-sm">
+                合言葉
+              </label>
+              <input
+                type="text"
+                id="password"
+                name="password"
+                value={formData.password}
+                onChange={handleChange}
+                className="w-full px-4 py-3 rounded-lg border border-white/40 bg-white/20 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-yellow-400 text-white placeholder-white/60"
+                placeholder="あいことば123"
+              />
+            </div>
 
-          {error && (
-            <p className="text-red-600 text-sm">{error}</p>
-          )}
+            {error && (
+              <p className="text-yellow-300 font-medium bg-red-700/50 rounded-lg p-2 text-center">{error}</p>
+            )}
 
-          <button
-            type="submit"
-            className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors"
-          >
-            大会を作成する
-          </button>
-        </form>
-        <div className="mt-4 text-center">
+            <button
+              type="submit"
+              className="w-full bg-gradient-to-r from-pink-600 to-orange-500 hover:from-pink-700 hover:to-orange-600 text-white font-bold py-3 rounded-lg shadow-lg transform transition hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              大会を作成する
+            </button>
+          </form>
+        </div>
+        
+        <div className="mt-6 text-center">
           <button
             onClick={() => router.push('/')}
-            className="text-blue-600 hover:text-blue-800 transition-colors"
+            className="text-white hover:text-yellow-300 transition-colors font-medium drop-shadow-md"
           >
             トップページに戻る
           </button>
