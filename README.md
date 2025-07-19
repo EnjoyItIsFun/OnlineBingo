@@ -1,36 +1,205 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# オンラインビンゴ - リアルタイムマルチプレイヤーゲーム
 
-## Getting Started
+## 🎯 プロジェクト概要
 
-First, run the development server:
+パーティーやイベントで使用できるオンラインビンゴゲームです。**アカウント登録不要**で、大会名と合言葉を共有するだけで複数人が同時参加できます。
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## 📋 要件定義
+
+### 機能要件
+#### ホスト機能
+- [ ] ゲームセッションの作成（セッションID自動生成）
+- [ ] 合言葉設定（オプション）
+- [ ] ビンゴ番号の選択・配信
+- [ ] プレイヤー一覧の確認
+- [ ] ゲーム状態の管理（待機中/進行中/終了）
+
+#### プレイヤー機能  
+- [ ] セッションIDによるゲーム参加
+- [ ] 自動生成ビンゴカードの表示
+- [ ] リアルタイムでの番号受信
+- [ ] ビンゴ達成の自動判定・通知
+- [ ] 複数ビンゴラインの検出
+
+### 非機能要件
+| 項目 | 目標 | 現在の状況 |
+|------|------|-----------|
+| レスポンス性 | WebSocket通信で即座に同期 | 実装予定 |
+| 同時利用 | 家族・友人レベル（10-20人）での安定動作 | テスト予定 |
+| 使いやすさ | アカウント登録なしで即参加可能 | 実装済み |
+| ブラウザ対応 | モダンブラウザで動作確認済み | Chrome/Safari確認済み |
+| セキュリティ | 基本的な攻撃対策を実装予定 | 学習・実装中 |
+
+### 制約条件
+- **予算**: 無料枠での運用（MongoDB Atlas 512MB、Vercel Hobby）
+- **開発期間**: 個人開発のため段階的リリース
+- **技術スタック**: Next.js + TypeScript（学習目的）
+- **対象ブラウザ**: モダンブラウザ（Chrome, Safari, Firefox最新版）
+
+### ユーザーストーリー
+```gherkin
+# ホストとして
+Given 家族でオンライン忘年会を開催したい
+When 「ゲーム作成」ボタンを押す  
+Then セッションIDが生成され、参加者に共有できる
+
+# 高齢の参加者として
+Given ITが苦手だがビンゴに参加したい
+When セッションIDを入力する
+Then 面倒な登録なしで即座にゲームに参加できる
+
+# 進行役として  
+Given 盛り上がりを維持したい
+When 番号を選択する
+Then 全員に同時に番号が表示され、ビンゴ達成者も即座に分かる
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 🎮 主な機能
+- ワンクリックでゲーム作成
+- セッションIDによる簡単参加
+- リアルタイム同期
+- 複数ビンゴライン検出
+- 合言葉による参加制限（オプション）
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 🤔 設計思想
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 問題意識
+既存のオンラインゲームは参加までの手順が複雑で、特にITに不慣れな参加者（高齢者など）にとって障壁となっていました。
 
-## Learn More
+### 解決アプローチ
+**「摩擦のないユーザー体験」を最優先に設計**
 
-To learn more about Next.js, take a look at the following resources:
+```
+従来: 新規登録 → メール認証 → プロフィール設定 → ゲーム参加
+本アプリ: セッションID入力 → 即参加
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### ターゲットユーザー
+- 家族・友人とのパーティー参加者
+- 企業のレクリエーション担当者
+- ITリテラシーに関係なく参加したい全ての人
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 🛠 技術スタック
 
-## Deploy on Vercel
+### フロントエンド
+- **Next.js 14** (App Router) - サーバーサイドレンダリングとAPI統合
+- **TypeScript** - 型安全性とコード品質の向上
+- **Tailwind CSS** - 効率的なスタイリング
+- **React Hooks** - 状態管理とライフサイクル管理
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### バックエンド
+- **Next.js API Routes** - サーバーレス関数
+- **Socket.io** - リアルタイム双方向通信
+- **MongoDB** - セッション・プレイヤー情報の永続化
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### インフラ・開発環境
+- **Vercel** - デプロイとホスティング（予定）
+- **MongoDB Atlas** - クラウドデータベース
+- **Git/GitHub** - バージョン管理
+
+## 🏗 アーキテクチャ
+
+### システム構成図
+```
+[Client] <-- WebSocket --> [Next.js Server] <-- MongoDB Driver --> [MongoDB]
+    |                           |
+    └── REST API ---------------┘
+```
+
+### データフロー
+1. **ゲーム作成**: クライアント → API Routes → MongoDB
+2. **リアルタイム通信**: Socket.io Hub → 全クライアント
+3. **状態同期**: MongoDB ↔ WebSocket → クライアント状態更新
+
+## 📊 技術的な工夫
+
+### 1. セッションベース認証
+```typescript
+// 従来のJWT認証ではなく、セッションIDのみで管理
+export type GameSession = {
+  sessionId: string;        // 6桁のランダム文字列
+  hostId: string;          // UUID v4
+  players: Player[];       // 参加者情報
+  status: 'waiting' | 'playing' | 'finished';
+}
+```
+
+### 2. リアルタイム同期
+```typescript
+// 全プレイヤーに同時配信
+socket.on('selectNumber', ({ sessionId, number }) => {
+  io.to(sessionId).emit('numberSelected', number);
+  io.to(sessionId).emit('checkBingo');
+});
+```
+
+### 3. 効率的なビンゴチェック
+```typescript
+// O(n²)の計算量でビンゴ判定
+export const checkBingo = (board: number[][], calledNumbers: number[]) => {
+  const calledSet = new Set(calledNumbers); // O(1)検索
+  // 行・列・対角線を同時チェック
+};
+```
+
+## 🎯 使い方
+
+### ホスト（主催者）
+1. 「ゲーム作成」ボタンをクリック
+2. 大会名と合言葉を参加者に共有
+3. 数字を選んでゲームを進行
+
+### ゲスト（参加者）
+1. 「ゲーム参加」からセッションIDを入力
+2. 名前と合言葉（設定されている場合）を入力
+3. 自動生成されたビンゴカードでゲーム参加
+
+## 📈 パフォーマンス考慮
+
+### スケーラビリティ
+- **並行セッション数**: MongoDB のコネクション管理
+- **WebSocket接続**: Socket.io の Room 機能でセッション分離
+- **メモリ効率**: セッション情報の定期的クリーンアップ
+
+### レスポンシブ対応
+- スマートフォンでの操作性を重視
+- タッチ操作に適したUI設計
+
+## 🧪 今後の改善計画
+
+### Phase 1: 基本機能強化
+- [ ] 接続断時の自動復帰機能
+- [ ] ゲーム結果のエクスポート機能
+- [ ] 音声・効果音の追加
+
+### Phase 2: エンタープライズ機能
+- [ ] 大規模セッション対応（100人以上）
+- [ ] 管理者用ダッシュボード
+- [ ] 使用統計・分析機能
+
+### Phase 3: マネタイゼーション
+- [ ] カスタムテーマ機能（有料）
+- [ ] 企業ブランディング対応
+- [ ] API提供（他サービス組み込み用）
+
+## 🔧 開発で学んだこと
+
+### WebSocket実装の課題と解決
+**課題**: Next.js App Router でのWebSocket統合  
+**解決**: API Routes + Socket.io の組み合わせによるハイブリッド構成
+
+### 状態管理の最適化
+**課題**: クライアント・サーバー間の状態同期  
+**解決**: サーバーを単一情報源とした一方向データフロー
+
+### TypeScript活用
+**効果**: 開発効率向上、実行時エラーの大幅削減
+```typescript
+// 型安全なイベントハンドリング
+interface ServerToClientEvents {
+  numberSelected: (number: number) => void;
+  playerBingo: (data: {playerId: string, bingoLines: number}) => void;
+}
+```
+
+**このプロジェクトは、実用性のあるWebアプリケーション開発スキルの習得を目的として制作しました。**
