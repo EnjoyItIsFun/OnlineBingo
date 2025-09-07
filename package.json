@@ -2,26 +2,38 @@
   "name": "bingo",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
-    "dev": "next dev --turbopack",
+    "dev": "tsx server.mjs",
+    "dev:next": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "db:init": "tsx scripts/safe-init-db.ts"
   },
   "dependencies": {
+    "lucide-react": "^0.525.0",
+    "mongodb": "^6.17.0",
     "next": "15.2.4",
+    "qrcode": "^1.5.4",
     "react": "19.0.0",
-    "react-dom": "19.0.0"
+    "react-dom": "19.0.0",
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.1"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
-    "@types/node": "^20",
+    "@types/node": "^20.19.9",
+    "@types/qrcode": "^1.5.5",
     "@types/react": "19.0.12",
     "@types/react-dom": "19.0.4",
+    "dotenv": "^17.2.1",
+    "dotenv-cli": "^9.0.0",
     "eslint": "^9",
     "eslint-config-next": "15.2.4",
     "postcss": "^8",
     "tailwindcss": "^3.4.1",
+    "tsx": "^4.20.3",
     "typescript": "^5"
   },
   "overrides": {
