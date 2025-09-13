@@ -10,16 +10,12 @@ const headers = {
   'Cache-Control': 'no-store, max-age=0',
 };
 
-/**
- * GETリクエスト処理
- * セッション情報を取得
- */
 export async function GET(
   request: NextRequest,
   { params }: { params: { sessionId: string } }
 ) {
   try {
-    const { sessionId } = await params;
+    const { sessionId } = params;
     
     // バリデーション
     if (!sessionId || !/^[A-Z0-9]{6}$/.test(sessionId)) {
@@ -67,13 +63,6 @@ export async function GET(
   }
 }
 
-/**
- * OPTIONSリクエスト処理（CORS対応）
- * 
- * 重要性：
- * - ブラウザは、異なるオリジンへのリクエスト前に
- *   プリフライトリクエスト（OPTIONS）を送信します
- */
 export async function OPTIONS() {
   return new NextResponse(null, {
     status: 200,
