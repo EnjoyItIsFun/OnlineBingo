@@ -19,7 +19,7 @@ export async function GET(
   { params }: { params: { sessionId: string } }
 ) {
   try {
-    const { sessionId } = params;
+    const { sessionId } = await params;
     
     // バリデーション
     if (!sessionId || !/^[A-Z0-9]{6}$/.test(sessionId)) {
