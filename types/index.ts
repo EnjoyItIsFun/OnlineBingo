@@ -98,11 +98,11 @@ export interface AuthenticationData {
 
 // 名前調整結果
 export interface NameAdjustmentResult {
-  finalName: string;
-  wasAdjusted: boolean;
-  originalName: string;
-  adjustmentReason?: string;
+  original: string;
+  adjusted: string;
+  reason: 'duplicate' | 'invalid' | 'length';
 }
+
 
 // QRコード設定
 export interface QRCodeOptions {
