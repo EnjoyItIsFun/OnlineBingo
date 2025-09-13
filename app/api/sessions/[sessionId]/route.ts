@@ -12,10 +12,10 @@ const headers = {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { sessionId: string } }
+  context : { params: { sessionId: string } }
 ) {
   try {
-    const { sessionId } = params;
+    const { sessionId } = context.params;
     
     // バリデーション
     if (!sessionId || !/^[A-Z0-9]{6}$/.test(sessionId)) {
