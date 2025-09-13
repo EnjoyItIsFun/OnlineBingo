@@ -12,7 +12,7 @@ const headers = {
 
 export async function GET(
   request: NextRequest,
-  context: { params: Record<string, string> }
+  context : { params: { sessionId: string } }
 ) {
   try {
     const { sessionId } = context.params;
