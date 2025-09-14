@@ -281,8 +281,8 @@ const JoinPageContent: React.FC = () => {
       {/* 名前調整通知 */}
       {nameAdjustment && (
         <NameAdjustmentNotification
-          originalName={nameAdjustment.originalName}
-          adjustedName={nameAdjustment.finalName}
+          originalName={nameAdjustment.original}
+          adjustedName={nameAdjustment.adjusted}
           reason="duplicate"
           onAcknowledge={acknowledgeAdjustment}
         />
