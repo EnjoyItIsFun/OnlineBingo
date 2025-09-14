@@ -253,5 +253,3 @@ export default function BingoTopPage() {
     </div>
   );
 }
-
-export { CreateGame, BingoBoard, BingoTopPage };
