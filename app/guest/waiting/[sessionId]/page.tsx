@@ -66,10 +66,9 @@ const WaitingPageContent: React.FC = () => {
           // 名前調整があった場合の処理
           if (player.nameAdjusted && player.originalName && player.name !== player.originalName) {
             setAdjustment({
-              finalName: player.name,
-              wasAdjusted: true,
-              originalName: player.originalName,
-              adjustmentReason: `「${player.originalName}」は既に使用されているため調整されました`
+              original: player.originalName,
+              adjusted: player.name,
+              reason: 'duplicate'
             });
           }
         }
@@ -330,8 +329,8 @@ const WaitingPageContent: React.FC = () => {
       {/* 名前調整通知 */}
       {nameAdjustment && (
         <NameAdjustmentNotification
-          originalName={nameAdjustment.originalName}
-          adjustedName={nameAdjustment.finalName}
+          originalName={nameAdjustment.original}
+          adjustedName={nameAdjustment.adjusted}
           reason="duplicate"
           onAcknowledge={acknowledgeAdjustment}
         />
