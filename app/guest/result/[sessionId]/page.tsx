@@ -50,9 +50,10 @@ const getEncouragementMessage = (stats: PersonalStats): string => {
   }
 };
 
-export default function GuestResultPage({ params: paramsPromise, searchParams }: GuestResultPageProps) {
+export default function GuestResultPage({ params: paramsPromise, searchParams: searchParamsPromise }: GuestResultPageProps) {
   const router = useRouter();
   const params = use(paramsPromise); 
+  const searchParams = use(searchParamsPromise); 
   const [session, setSession] = useState<GameSession | null>(null);
   const [personalStats, setPersonalStats] = useState<PersonalStats | null>(null);
   const [boardCells, setBoardCells] = useState<BingoCell[][]>([]);

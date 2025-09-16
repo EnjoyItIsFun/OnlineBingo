@@ -34,9 +34,10 @@ const formatDuration = (seconds: number): string => {
   }
 };
 
-export default function HostResultPage({ params: paramsPromise, searchParams }: HostResultPageProps) {
+export default function HostResultPage({ params: paramsPromise, searchParams: searchParamsPromise }: HostResultPageProps) {
   const router = useRouter();
-  const params = use(paramsPromise); 
+  const params = use(paramsPromise);
+  const searchParams = use(searchParamsPromise);
   const [session, setSession] = useState<GameSession | null>(null);
   const [statistics, setStatistics] = useState<GameStatistics | null>(null);
   const [loading, setLoading] = useState(true);
