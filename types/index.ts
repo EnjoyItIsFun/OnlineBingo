@@ -251,25 +251,25 @@ export interface BingoCell {
 
 // ホストゲーム進行画面のProps
 export interface HostGamePageProps {
-  params: { sessionId: string };
+  params: Promise<{ sessionId: string }>;  // Next.js 15ではPromiseでラップ
   searchParams: { token?: string };
 }
 
 // ゲストゲームプレイ画面のProps
 export interface GuestGamePageProps {
-  params: { sessionId: string };
+  params: Promise<{ sessionId: string }>;  // Next.js 15ではPromiseでラップ
   searchParams: { playerId?: string; token?: string };
 }
 
 // ホスト結果画面のProps
 export interface HostResultPageProps {
-  params: { sessionId: string };
+  params: Promise<{ sessionId: string }>;  // Next.js 15ではPromiseでラップ
   searchParams: { token?: string };
 }
 
 // ゲスト結果画面のProps
 export interface GuestResultPageProps {
-  params: { sessionId: string };
+  params: Promise<{ sessionId: string }>;  // Next.js 15ではPromiseでラップ
   searchParams: { playerId?: string; token?: string };
 }
 

@@ -1,5 +1,6 @@
-"use client" 
-import React, { useState, useEffect } from 'react';
+"use client"
+
+import React, { useState, useEffect, use } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   Player, 
@@ -33,8 +34,9 @@ const formatDuration = (seconds: number): string => {
   }
 };
 
-export default function HostResultPage({ params, searchParams }: HostResultPageProps) {
+export default function HostResultPage({ params: paramsPromise, searchParams }: HostResultPageProps) {
   const router = useRouter();
+  const params = use(paramsPromise); 
   const [session, setSession] = useState<GameSession | null>(null);
   const [statistics, setStatistics] = useState<GameStatistics | null>(null);
   const [loading, setLoading] = useState(true);

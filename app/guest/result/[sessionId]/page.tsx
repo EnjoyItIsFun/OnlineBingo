@@ -1,5 +1,6 @@
-"use client" 
-import React, { useState, useEffect } from 'react';
+"use client"
+
+import React, { useState, useEffect, use } from 'react';
 import { useRouter } from 'next/navigation';
 import BingoCard from '../../../components/BingoCard';
 import { 
@@ -49,8 +50,9 @@ const getEncouragementMessage = (stats: PersonalStats): string => {
   }
 };
 
-export default function GuestResultPage({ params, searchParams }: GuestResultPageProps) {
+export default function GuestResultPage({ params: paramsPromise, searchParams }: GuestResultPageProps) {
   const router = useRouter();
+  const params = use(paramsPromise); 
   const [session, setSession] = useState<GameSession | null>(null);
   const [personalStats, setPersonalStats] = useState<PersonalStats | null>(null);
   const [boardCells, setBoardCells] = useState<BingoCell[][]>([]);
