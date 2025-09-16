@@ -9,6 +9,7 @@ export interface Player {
   isConnected: boolean;
   bingoCount: number;
   lastActiveAt?: string;
+  bingoAchievedAt?: string;
 }
 
 // ゲームセッション
@@ -215,3 +216,74 @@ export interface QRScannerProps {
 
 // 時間フォーマット関数の型
 export type FormatTimeFunction = (seconds: number) => string;
+
+// ========================================
+// 結果画面用の型定義
+// ========================================
+
+// ゲーム統計
+export interface GameStatistics {
+  totalNumbers: number;
+  duration: number;
+  totalPlayers: number;
+  completionRate: number;
+}
+
+// 個人統計
+export interface PersonalStats {
+  rank: number;
+  totalPlayers: number;
+  bingoCount: number;
+  markedCells: number;
+  percentile: number;
+}
+
+// ビンゴセル
+export interface BingoCell {
+  number: number;
+  marked: boolean;
+  isLatest?: boolean;
+}
+
+// ========================================
+// ページコンポーネントのProps型定義
+// ========================================
+
+// ホストゲーム進行画面のProps
+export interface HostGamePageProps {
+  params: { sessionId: string };
+  searchParams: { token?: string };
+}
+
+// ゲストゲームプレイ画面のProps
+export interface GuestGamePageProps {
+  params: { sessionId: string };
+  searchParams: { playerId?: string; token?: string };
+}
+
+// ホスト結果画面のProps
+export interface HostResultPageProps {
+  params: { sessionId: string };
+  searchParams: { token?: string };
+}
+
+// ゲスト結果画面のProps
+export interface GuestResultPageProps {
+  params: { sessionId: string };
+  searchParams: { playerId?: string; token?: string };
+}
+
+// ========================================
+// コンポーネントのProps型定義
+// ========================================
+
+// ビンゴカードコンポーネントのProps
+export interface BingoCardProps {
+  board: BingoCell[][];
+  onCellClick?: (row: number, col: number) => void;
+  isInteractive?: boolean;
+  bingoLines?: string[];
+  showNumbers?: boolean;
+  size?: 'small' | 'medium' | 'large';
+  className?: string;
+}
