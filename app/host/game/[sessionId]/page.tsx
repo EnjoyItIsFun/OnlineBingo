@@ -26,8 +26,8 @@ interface GameSession {
 }
 
 interface HostGamePageProps {
-  params: { sessionId: string };
-  searchParams: { token?: string };
+  params: Promise<{ sessionId: string }>;
+  searchParams: Promise<{ token?: string }>;
 }
 
 // BINGO文字を取得する関数
@@ -60,6 +60,8 @@ export default function HostGamePage({ params, searchParams }: HostGamePageProps
   const [winners, setWinners] = useState<Player[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [resolvedParams, setResolvedParams] = useState<{ sessionId: string } | null>(null);
+  const [resolvedSearchParams, setResolvedSearchParams] = useState<{ token?: string } | null>(null);
 
   const { socket, isConnected } = useSocketConnection();
   
@@ -69,13 +71,23 @@ export default function HostGamePage({ params, searchParams }: HostGamePageProps
     formattedTime
   } = useGameTimer(session?.status || 'waiting', 7200); // 2時間タイマー
 
+  // PromiseのparamsとsearchParamsを解決
+  useEffect(() => {
+    Promise.all([params, searchParams]).then(([p, sp]) => {
+      setResolvedParams(p);
+      setResolvedSearchParams(sp);
+    });
+  }, [params, searchParams]);
+
   // セッション情報の取得
   useEffect(() => {
+    if (!resolvedParams || !resolvedSearchParams) return;
+
     const fetchSession = async () => {
       try {
-        const res = await fetch(`/api/sessions/${params.sessionId}`, {
+        const res = await fetch(`/api/sessions/${resolvedParams.sessionId}`, {
           headers: {
-            'Authorization': `Bearer ${searchParams.token}`
+            'Authorization': `Bearer ${resolvedSearchParams.token}`
           }
         });
 
@@ -101,7 +113,7 @@ export default function HostGamePage({ params, searchParams }: HostGamePageProps
     };
 
     fetchSession();
-  }, [params.sessionId, searchParams.token]);
+  }, [resolvedParams, resolvedSearchParams]);
 
   // Socket.ioイベントリスナー
   useEffect(() => {
@@ -145,7 +157,7 @@ export default function HostGamePage({ params, searchParams }: HostGamePageProps
 
   // 番号を引く
   const drawNumber = useCallback(() => {
-    if (remainingNumbers.length === 0 || isDrawing) return;
+    if (!resolvedParams || remainingNumbers.length === 0 || isDrawing) return;
 
     setIsDrawing(true);
     
@@ -168,22 +180,22 @@ export default function HostGamePage({ params, searchParams }: HostGamePageProps
         // Socket.ioで番号を配信
         if (socket) {
           socket.emit('numberDrawn', {
-            sessionId: params.sessionId,
+            sessionId: resolvedParams.sessionId,
             number: newNumber,
             drawnNumbers: [...drawnNumbers, newNumber]
           });
         }
       }
     }, 100);
-  }, [remainingNumbers, drawnNumbers, isDrawing, socket, params.sessionId]);
+  }, [remainingNumbers, drawnNumbers, isDrawing, socket, resolvedParams]);
 
   // ゲーム開始
   const startGame = () => {
-    if (!socket || !session) return;
+    if (!socket || !session || !resolvedParams || !resolvedSearchParams) return;
 
     socket.emit('startGame', {
-      sessionId: params.sessionId,
-      accessToken: searchParams.token
+      sessionId: resolvedParams.sessionId,
+      accessToken: resolvedSearchParams.token
     });
 
     setSession(prev => prev ? { ...prev, status: 'playing' } : null);
@@ -191,15 +203,15 @@ export default function HostGamePage({ params, searchParams }: HostGamePageProps
 
   // ゲーム終了
   const endGame = () => {
-    if (!socket || !session) return;
+    if (!socket || !session || !resolvedParams) return;
 
     socket.emit('endGame', {
-      sessionId: params.sessionId,
+      sessionId: resolvedParams.sessionId,
       winners: winners.map(w => w.id)
     });
 
     setSession(prev => prev ? { ...prev, status: 'finished' } : null);
-    router.push(`/host/result/${params.sessionId}`);
+    router.push(`/host/result/${resolvedParams.sessionId}`);
   };
 
   if (loading) {
@@ -235,7 +247,7 @@ export default function HostGamePage({ params, searchParams }: HostGamePageProps
           <div className="flex justify-between items-center">
             <div>
               <h1 className="text-3xl font-bold text-gray-800">{session?.gameName}</h1>
-              <p className="text-gray-600">セッションID: {params.sessionId}</p>
+              <p className="text-gray-600">セッションID: {resolvedParams?.sessionId}</p>
             </div>
             <div className="text-right">
               <p className="text-sm text-gray-600">残り時間</p>

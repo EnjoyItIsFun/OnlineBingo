@@ -27,8 +27,8 @@ interface GameSession {
 }
 
 interface GuestGamePageProps {
-  params: { sessionId: string };
-  searchParams: { playerId?: string; token?: string };
+  params: Promise<{ sessionId: string }>;
+  searchParams: Promise<{ playerId?: string; token?: string }>;
 }
 
 // BINGO文字を取得する関数
@@ -89,17 +89,29 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [playerName, setPlayerName] = useState<string>('');
+  const [resolvedParams, setResolvedParams] = useState<{ sessionId: string } | null>(null);
+  const [resolvedSearchParams, setResolvedSearchParams] = useState<{ playerId?: string; token?: string } | null>(null);
 
   const { socket, isConnected } = useSocketConnection();
 
+  // PromiseのparamsとsearchParamsを解決
+  useEffect(() => {
+    Promise.all([params, searchParams]).then(([p, sp]) => {
+      setResolvedParams(p);
+      setResolvedSearchParams(sp);
+    });
+  }, [params, searchParams]);
+
   // セッション情報とプレイヤー情報の取得
   useEffect(() => {
+    if (!resolvedParams || !resolvedSearchParams) return;
+
     const fetchData = async () => {
       try {
         // セッション情報取得
-        const sessionRes = await fetch(`/api/sessions/${params.sessionId}`, {
+        const sessionRes = await fetch(`/api/sessions/${resolvedParams.sessionId}`, {
           headers: {
-            'Authorization': `Bearer ${searchParams.token}`
+            'Authorization': `Bearer ${resolvedSearchParams.token}`
           }
         });
 
@@ -114,7 +126,7 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
 
         // プレイヤー情報から自分のボードを取得
         const player = sessionData.players.find(
-          (p: Player) => p.id === searchParams.playerId
+          (p: Player) => p.id === resolvedSearchParams.playerId
         );
 
         if (!player) {
@@ -146,11 +158,11 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
     };
 
     fetchData();
-  }, [params.sessionId, searchParams.playerId, searchParams.token]);
+  }, [resolvedParams, resolvedSearchParams]);
 
   // Socket.ioイベントリスナー
   useEffect(() => {
-    if (!socket) return;
+    if (!socket || !resolvedParams || !resolvedSearchParams) return;
 
     // ゲーム開始
     socket.on('gameStarted', () => {
@@ -182,8 +194,8 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
           
           // サーバーに通知
           socket.emit('bingoAchieved', {
-            sessionId: params.sessionId,
-            playerId: searchParams.playerId,
+            sessionId: resolvedParams.sessionId,
+            playerId: resolvedSearchParams.playerId,
             bingoCount: count,
             lines
           });
@@ -202,7 +214,7 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
       
       // 勝者情報を含めて結果画面へ遷移
       const winnersParam = encodeURIComponent(data.winners.join(','));
-      router.push(`/guest/result/${params.sessionId}?playerId=${searchParams.playerId}&winners=${winnersParam}`);
+      router.push(`/guest/result/${resolvedParams.sessionId}?playerId=${resolvedSearchParams.playerId}&winners=${winnersParam}`);
     });
 
     return () => {
@@ -210,7 +222,7 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
       socket.off('numberDrawn');
       socket.off('gameEnded');
     };
-  }, [socket, bingoCount, params.sessionId, searchParams.playerId, router]);
+  }, [socket, bingoCount, resolvedParams, resolvedSearchParams, router]);
 
   // セルをクリックしてマーク/解除（手動調整用）
   const toggleCell = useCallback((row: number, col: number) => {
