@@ -7,16 +7,19 @@ import { useRouter } from 'next/navigation';
 interface SessionFormData {
   name: string;
   maxPlayers: number;
-  passphrase?: string;  // 合言葉を追加
+  passphrase?: string;
 }
 
 interface SessionResponse {
   sessionId: string;
-  hostToken: string;
+  hostId: string;  
   accessToken: string;
-  passphrase?: string;  // 合言葉を追加
+  passphrase?: string;
 }
 
+/**
+ * ホスト用セッション作成画面
+ */
 export default function CreateSessionPage() {
   const router = useRouter();
   
@@ -24,7 +27,7 @@ export default function CreateSessionPage() {
   const [formData, setFormData] = useState<SessionFormData>({
     name: '',
     maxPlayers: 10,
-    passphrase: ''  // 合言葉の初期値
+    passphrase: ''
   });
   
   // UI状態の管理
@@ -65,10 +68,10 @@ export default function CreateSessionPage() {
       const requestBody = {
         gameName: formData.name.trim(),
         maxPlayers: formData.maxPlayers,
-        passphrase: formData.passphrase?.trim() || undefined  // 合言葉を追加
+        passphrase: formData.passphrase?.trim() || undefined
       };
 
-      console.log('Sending request:', requestBody);  // デバッグ用
+      console.log('Sending request:', requestBody);
 
       // セッション作成APIを呼び出し
       const response = await fetch('/api/sessions', {
@@ -79,21 +82,21 @@ export default function CreateSessionPage() {
         body: JSON.stringify(requestBody)
       });
 
-      console.log('Response status:', response.status);  // デバッグ用
+      console.log('Response status:', response.status);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'エラーが発生しました' }));
-        console.error('API Error:', errorData);  // デバッグ用
+        console.error('API Error:', errorData);
         throw new Error(errorData.error || `エラー: ${response.status}`);
       }
 
       const data: SessionResponse = await response.json();
-      console.log('API Response:', data);  // デバッグ用
+      console.log('API Response:', data);
 
-      // セッション情報の保存
+      // セッション情報の保存（hostId使用）
       const sessionInfo = {
         sessionId: data.sessionId,
-        hostToken: data.hostToken,
+        hostId: data.hostId,  // hostIdを使用
         accessToken: data.accessToken,
         name: formData.name,
         maxPlayers: formData.maxPlayers,
