@@ -7,30 +7,24 @@ import { useRouter } from 'next/navigation';
 interface SessionFormData {
   name: string;
   maxPlayers: number;
+  passphrase?: string;  // 合言葉を追加
 }
 
 interface SessionResponse {
   sessionId: string;
   hostToken: string;
-  accessToken: string;  // アクセストークン方式に変更
+  accessToken: string;
+  passphrase?: string;  // 合言葉を追加
 }
 
-/**
- * ホスト用セッション作成画面
- * ガラスモーフィズムとグラデーションを活用したモダンなデザイン
- * 
- * デザインの特徴：
- * - ピンク〜オレンジのグラデーション背景
- * - 半透明のガラスモーフィズム効果
- * - backdrop-blurによるぼかし効果
- */
 export default function CreateSessionPage() {
   const router = useRouter();
   
   // フォームデータの状態管理
   const [formData, setFormData] = useState<SessionFormData>({
     name: '',
-    maxPlayers: 10
+    maxPlayers: 10,
+    passphrase: ''  // 合言葉の初期値
   });
   
   // UI状態の管理
@@ -69,33 +63,41 @@ export default function CreateSessionPage() {
 
       // APIリクエストの準備
       const requestBody = {
-        gameName: formData.name.trim(),  // APIが期待するフィールド名に修正
-        maxPlayers: formData.maxPlayers
+        gameName: formData.name.trim(),
+        maxPlayers: formData.maxPlayers,
+        passphrase: formData.passphrase?.trim() || undefined  // 合言葉を追加
       };
+
+      console.log('Sending request:', requestBody);  // デバッグ用
 
       // セッション作成APIを呼び出し
       const response = await fetch('/api/sessions', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json; charset=utf-8',
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify(requestBody)
       });
 
+      console.log('Response status:', response.status);  // デバッグ用
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'エラーが発生しました' }));
+        console.error('API Error:', errorData);  // デバッグ用
         throw new Error(errorData.error || `エラー: ${response.status}`);
       }
 
       const data: SessionResponse = await response.json();
+      console.log('API Response:', data);  // デバッグ用
 
       // セッション情報の保存
       const sessionInfo = {
         sessionId: data.sessionId,
         hostToken: data.hostToken,
-        accessToken: data.accessToken,  // アクセストークンを保存
+        accessToken: data.accessToken,
         name: formData.name,
         maxPlayers: formData.maxPlayers,
+        passphrase: data.passphrase,
         createdAt: new Date().toISOString()
       };
 
@@ -181,6 +183,27 @@ export default function CreateSessionPage() {
               />
             </div>
 
+            {/* 合言葉（オプション） */}
+            <div className="space-y-2">
+              <label htmlFor="passphrase" className="block text-lg font-medium text-white drop-shadow-sm">
+                合言葉（オプション）
+              </label>
+              <input
+                type="text"
+                id="passphrase"
+                name="passphrase"
+                value={formData.passphrase}
+                onChange={handleInputChange}
+                className="w-full px-4 py-3 rounded-lg border border-white/40 bg-white/20 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-yellow-400 text-white placeholder-white/60"
+                placeholder="秘密の合言葉"
+                disabled={isLoading}
+                maxLength={50}
+              />
+              <p className="text-xs text-white/70">
+                ※ 設定すると、参加時に合言葉の入力が必要になります
+              </p>
+            </div>
+
             {/* 送信ボタン */}
             <button
               type="submit"
@@ -217,7 +240,7 @@ export default function CreateSessionPage() {
           </button>
         </div>
 
-        {/* ヒント（オプション） */}
+        {/* ヒント */}
         <div className="mt-6 bg-white/20 backdrop-blur-sm rounded-lg p-4 border border-white/30">
           <p className="text-sm text-white/90">
             💡 ヒント：作成後、<strong>アクセストークン</strong>が生成されます。参加者はセッションIDとアクセストークンで参加できます。
