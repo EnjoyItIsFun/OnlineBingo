@@ -6,10 +6,11 @@ import { Copy, CheckCircle, Users, Clock, Key } from 'lucide-react';
 
 interface SessionInfo {
   sessionId: string;
-  hostToken: string;
+  hostId: string;
   accessToken: string;
   name: string;
   maxPlayers: number;
+  passphrase?: string;
   createdAt: string;
 }
 
@@ -79,7 +80,7 @@ export default function MadeGamePage() {
     const params = new URLSearchParams({
       sessionId: sessionInfo.sessionId,
       accessToken: sessionInfo.accessToken,
-      hostId: sessionInfo.hostToken
+      hostId: sessionInfo.hostId  // hostIdを使用
     });
 
     router.push(`/host/waiting?${params.toString()}`);
@@ -184,6 +185,20 @@ export default function MadeGamePage() {
             )}
           </div>
 
+          {/* 合言葉（設定されている場合） */}
+          {sessionInfo.passphrase && (
+            <div className="space-y-2">
+              <label className="text-white font-medium">
+                🔐 合言葉（参加時に必要）
+              </label>
+              <div className="bg-white/20 backdrop-blur-sm rounded-lg px-4 py-3">
+                <code className="text-lg font-mono text-yellow-300">
+                  {sessionInfo.passphrase}
+                </code>
+              </div>
+            </div>
+          )}
+
           {/* 参加URL */}
           <div className="space-y-2">
             <label className="text-white font-medium flex items-center">
@@ -206,8 +221,9 @@ export default function MadeGamePage() {
             </p>
             <ol className="text-white/90 text-sm space-y-1 ml-4">
               <li>1. セッションIDとアクセストークンを参加者に共有</li>
-              <li>2. または、待機画面で表示されるQRコードを読み取ってもらう</li>
-              <li>3. 参加者が名前を入力して参加</li>
+              {sessionInfo.passphrase && <li>2. 合言葉も一緒に共有</li>}
+              <li>{sessionInfo.passphrase ? '3' : '2'}. または、待機画面で表示されるQRコードを読み取ってもらう</li>
+              <li>{sessionInfo.passphrase ? '4' : '3'}. 参加者が名前を入力して参加</li>
             </ol>
           </div>
         </div>
