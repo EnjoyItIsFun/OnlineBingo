@@ -64,7 +64,7 @@ const CreateGame = () => {
       <div className="grid gap-6 bg-white/20 backdrop-blur-md rounded-b-lg border-b border-l border-r border-white/20 p-6 shadow-xl">
         <div className="flex justify-center">
           <button 
-            onClick={() => router.push('/host/')}
+            onClick={() => router.push('/host/create/')}
             className="w-full bg-gradient-to-r from-pink-600 to-orange-500 hover:from-pink-700 hover:to-orange-600 text-white font-bold py-3 rounded-lg shadow-lg transform transition hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             ゲームを主催
