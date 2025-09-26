@@ -1,12 +1,10 @@
 // app/guest/waiting/[sessionId]/page.tsx
-// ゲスト待機ページ（エラー修正版）
+// ゲスト待機ページ（ゴージャスデザイン版）
 
 'use client';
 
 import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
-import { PlayerList } from '@/app/components/PlayerList';
-import { NameAdjustmentNotification } from '@/app/components/NameAdjustmentNotification';
 import { useSocketConnection } from '@/hooks/useSocketConnection';
 import { useNameAdjustment } from '@/hooks/useNameAdjustment';
 import { useGameTimer } from '@/hooks/useGameTimer';
@@ -20,7 +18,53 @@ import {
   leaveSession,
   normalizeErrorMessage 
 } from '@/utils/api';
-import { Clock, AlertCircle, LogOut, Wifi, WifiOff } from 'lucide-react';
+import { Clock, AlertCircle, LogOut, Wifi, WifiOff, Users, Sparkles, Crown, Timer } from 'lucide-react';
+
+// プレイヤーカードコンポーネント
+const PlayerCard: React.FC<{
+  player: Player;
+  isCurrentPlayer: boolean;
+  isHost?: boolean;
+}> = ({ player, isCurrentPlayer, isHost }) => {
+  return (
+    <div className={`
+      p-4 rounded-lg border transition-all
+      ${isCurrentPlayer 
+        ? 'bg-gradient-to-br from-yellow-300/50 to-yellow-500/50 border-yellow-400 shadow-lg' 
+        : 'bg-white/20 border-white/30 backdrop-blur-sm hover:bg-white/30'}
+    `}>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center">
+          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-400 to-orange-400 flex items-center justify-center text-white font-bold">
+            {player.name.charAt(0).toUpperCase()}
+          </div>
+          <div className="ml-3">
+            <p className="font-semibold text-white drop-shadow-md flex items-center">
+              {player.name}
+              {isHost && (
+                <Crown className="w-4 h-4 text-yellow-300 ml-1" />
+              )}
+              {isCurrentPlayer && (
+                <span className="ml-2 text-xs bg-yellow-400 text-red-700 px-2 py-1 rounded-full font-bold">
+                  あなた
+                </span>
+              )}
+            </p>
+            {player.nameAdjusted && (
+              <p className="text-xs text-white/70">
+                元の名前: {player.originalName}
+              </p>
+            )}
+          </div>
+        </div>
+        <div className={`
+          w-3 h-3 rounded-full
+          ${player.isConnected ? 'bg-green-400' : 'bg-gray-400'}
+        `} />
+      </div>
+    </div>
+  );
+};
 
 // 待機ページのメインコンポーネント
 const WaitingPageContent: React.FC = () => {
@@ -39,7 +83,7 @@ const WaitingPageContent: React.FC = () => {
 
   const { socket, isConnected, connect, disconnect, on, off } = useSocketConnection();
   const { nameAdjustment, setAdjustment, acknowledgeAdjustment } = useNameAdjustment();
-  const { formattedTime, isActive } = useGameTimer(
+  const { formattedTime } = useGameTimer(
     session?.status || 'waiting',
     7200 // 2時間
   );
@@ -54,16 +98,13 @@ const WaitingPageContent: React.FC = () => {
       }
 
       try {
-        // セッション情報を取得
         const sessionData = await getSession(sessionId, accessToken);
         setSession(sessionData);
 
-        // 現在のプレイヤーを特定
         const player = sessionData.players.find(p => p.id === playerId);
         if (player) {
           setCurrentPlayer(player);
           
-          // 名前調整があった場合の処理
           if (player.nameAdjusted && player.originalName && player.name !== player.originalName) {
             setAdjustment({
               original: player.originalName,
@@ -73,7 +114,6 @@ const WaitingPageContent: React.FC = () => {
           }
         }
 
-        // Socket.io接続
         const authData: AuthenticationData = {
           sessionId,
           accessToken,
@@ -115,34 +155,21 @@ const WaitingPageContent: React.FC = () => {
       });
     };
 
-    const handleGameStarted = (updatedSession: GameSession) => {
-      setSession(updatedSession);
-      // ゲーム画面にリダイレクト
-      router.push(`/guest/game/${sessionId}?playerId=${playerId}&accessToken=${accessToken}`);
+    const handleGameStarted = (data?: { sessionId: string }) => {
+      // sessionIdの確認
+      if (data?.sessionId === sessionId) {
+        router.push(`/guest/game/${sessionId}?playerId=${playerId}&accessToken=${accessToken}`);
+      }
     };
 
-    const handleSessionUpdated = (updatedSession: GameSession) => {
-      setSession(updatedSession);
-    };
-
-    const handleConnectionError = (errorMessage: string) => {
-      setError(errorMessage);
-    };
-
-    // イベントリスナー登録
     on('player_joined', handlePlayerJoined);
     on('player_left', handlePlayerLeft);
     on('game_started', handleGameStarted);
-    on('session_updated', handleSessionUpdated);
-    on('connection_error', handleConnectionError);
 
     return () => {
-      // イベントリスナー解除
       off('player_joined', handlePlayerJoined);
       off('player_left', handlePlayerLeft);
       off('game_started', handleGameStarted);
-      off('session_updated', handleSessionUpdated);
-      off('connection_error', handleConnectionError);
     };
   }, [socket, on, off, router, sessionId, playerId, accessToken]);
 
@@ -172,50 +199,34 @@ const WaitingPageContent: React.FC = () => {
     connect(authData);
   }, [sessionId, accessToken, playerId, connect]);
 
+  // ローディング画面
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-pink-500 via-red-500 to-orange-500 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">セッション情報を読み込み中...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-400 mx-auto mb-4"></div>
+          <p className="text-white text-lg font-medium drop-shadow-sm">セッション情報を読み込み中...</p>
         </div>
       </div>
     );
   }
 
-  if (error) {
+  // エラー画面
+  if (error || !session || !currentPlayer) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-red-50 to-red-100 flex items-center justify-center px-4">
+      <div className="min-h-screen bg-gradient-to-br from-pink-500 via-red-500 to-orange-500 flex items-center justify-center px-4">
         <div className="max-w-md w-full">
-          <div className="bg-white rounded-lg shadow-md p-6 text-center">
-            <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-            <h2 className="text-xl font-semibold text-gray-800 mb-2">エラーが発生しました</h2>
-            <p className="text-gray-600 mb-4">{error}</p>
-            <button
-              onClick={() => router.push('/guest/join')}
-              className="bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              参加ページに戻る
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!session || !currentPlayer) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-red-50 to-red-100 flex items-center justify-center px-4">
-        <div className="max-w-md w-full">
-          <div className="bg-white rounded-lg shadow-md p-6 text-center">
-            <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-            <h2 className="text-xl font-semibold text-gray-800 mb-2">セッションが見つかりません</h2>
-            <p className="text-gray-600 mb-4">
-              セッション情報を確認してください
+          <div className="bg-white/30 backdrop-blur-md rounded-xl shadow-2xl p-6 border border-white/20">
+            <AlertCircle className="w-12 h-12 text-yellow-300 mx-auto mb-4" />
+            <h2 className="text-xl font-bold text-white text-center mb-2 drop-shadow-md">
+              エラーが発生しました
+            </h2>
+            <p className="text-white/90 text-center mb-4">
+              {error || 'セッション情報を確認してください'}
             </p>
             <button
               onClick={() => router.push('/guest/join')}
-              className="bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full bg-gradient-to-r from-pink-600 to-orange-500 hover:from-pink-700 hover:to-orange-600 text-white font-bold py-3 rounded-lg shadow-lg transform transition hover:scale-105"
             >
               参加ページに戻る
             </button>
@@ -226,114 +237,142 @@ const WaitingPageContent: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-gradient-to-br from-pink-500 via-red-500 to-orange-500 p-8">
       <div className="max-w-4xl mx-auto">
         {/* ヘッダー */}
-        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-800">
-                {session.gameName}
-              </h1>
-              <p className="text-gray-600 mt-1">
-                セッションID: <span className="font-mono">{session.sessionId}</span>
-              </p>
-            </div>
-            
-            <div className="flex items-center space-x-4">
-              {/* 接続状態 */}
-              <div className="flex items-center">
-                {isConnected ? (
-                  <Wifi className="w-5 h-5 text-green-500 mr-2" />
-                ) : (
-                  <WifiOff className="w-5 h-5 text-red-500 mr-2" />
-                )}
-                <span className={`text-sm ${isConnected ? 'text-green-600' : 'text-red-600'}`}>
-                  {isConnected ? 'オンライン' : 'オフライン'}
-                </span>
-                {!isConnected && (
-                  <button
-                    onClick={handleReconnect}
-                    className="ml-2 text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200"
-                  >
-                    再接続
-                  </button>
-                )}
-              </div>
-
-              {/* 離脱ボタン */}
-              <button
-                onClick={handleLeaveSession}
-                className="flex items-center text-red-600 hover:text-red-800 text-sm font-medium"
-              >
-                <LogOut className="w-4 h-4 mr-1" />
-                離脱
-              </button>
-            </div>
+        <div className="text-center mb-8">
+          <div className="flex items-center justify-center mb-4">
+            <Sparkles className="w-10 h-10 text-yellow-300 mr-3" />
+            <h1 className="text-4xl font-bold text-white drop-shadow-lg">
+              {session.gameName}
+            </h1>
+            <Sparkles className="w-10 h-10 text-yellow-300 ml-3" />
           </div>
+          <p className="text-white/90 text-lg">
+            セッションID: <span className="font-mono bg-white/20 px-3 py-1 rounded-lg">{session.sessionId}</span>
+          </p>
+        </div>
 
-          {/* ステータス情報 */}
-          <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="bg-blue-50 rounded-lg p-3 text-center">
-              <div className="text-lg font-semibold text-blue-700">
-                {session.status === 'waiting' ? '待機中' : 
-                 session.status === 'playing' ? 'ゲーム中' : 
-                 session.status === 'finished' ? '終了' : '期限切れ'}
-              </div>
-              <div className="text-sm text-blue-600">ステータス</div>
-            </div>
-            
-            <div className="bg-green-50 rounded-lg p-3 text-center">
-              <div className="text-lg font-semibold text-green-700">
+        {/* ステータスカード */}
+        <div className="bg-white/30 backdrop-blur-md rounded-xl shadow-2xl p-6 mb-6 border border-white/20">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {/* 参加者数 */}
+            <div className="bg-gradient-to-br from-pink-400/50 to-red-400/50 rounded-lg p-4 text-center border border-white/30">
+              <Users className="w-8 h-8 text-yellow-300 mx-auto mb-2" />
+              <div className="text-2xl font-bold text-white drop-shadow-md">
                 {session.players.length} / {session.maxPlayers}
               </div>
-              <div className="text-sm text-green-600">参加者数</div>
+              <div className="text-sm text-white/90">参加者</div>
             </div>
             
-            <div className="bg-purple-50 rounded-lg p-3 text-center">
-              <div className="text-lg font-semibold text-purple-700">
+            {/* 残り時間 */}
+            <div className="bg-gradient-to-br from-orange-400/50 to-yellow-400/50 rounded-lg p-4 text-center border border-white/30">
+              <Timer className="w-8 h-8 text-yellow-300 mx-auto mb-2" />
+              <div className="text-2xl font-bold text-white drop-shadow-md">
                 {formattedTime}
               </div>
-              <div className="text-sm text-purple-600">
-                {isActive ? '残り時間' : 'セッション時間'}
-              </div>
+              <div className="text-sm text-white/90">残り時間</div>
+            </div>
+            
+            {/* 接続状態 */}
+            <div className="bg-gradient-to-br from-purple-400/50 to-pink-400/50 rounded-lg p-4 text-center border border-white/30">
+              {isConnected ? (
+                <>
+                  <Wifi className="w-8 h-8 text-green-400 mx-auto mb-2" />
+                  <div className="text-2xl font-bold text-white drop-shadow-md">
+                    オンライン
+                  </div>
+                </>
+              ) : (
+                <>
+                  <WifiOff className="w-8 h-8 text-red-400 mx-auto mb-2" />
+                  <div className="text-xl font-bold text-white drop-shadow-md">
+                    オフライン
+                  </div>
+                </>
+              )}
+              <div className="text-sm text-white/90">接続状態</div>
+              {!isConnected && (
+                <button
+                  onClick={handleReconnect}
+                  className="mt-2 text-xs bg-yellow-400 text-red-700 px-3 py-1 rounded-full hover:bg-yellow-300 font-bold"
+                >
+                  再接続
+                </button>
+              )}
             </div>
           </div>
         </div>
 
         {/* 待機メッセージ */}
-        {session.status === 'waiting' && (
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
-            <div className="flex items-center">
-              <Clock className="w-5 h-5 text-yellow-600 mr-2" />
-              <div>
-                <h3 className="text-sm font-medium text-yellow-800">
-                  ゲーム開始を待機中
-                </h3>
-                <p className="text-sm text-yellow-700 mt-1">
-                  ホストがゲームを開始するまでお待ちください
-                </p>
-              </div>
+        <div className="bg-yellow-300/80 backdrop-blur-md rounded-xl p-6 mb-6 border-2 border-yellow-400 shadow-lg">
+          <div className="flex items-center justify-center">
+            <Clock className="w-8 h-8 text-red-700 mr-3 animate-pulse" />
+            <div className="text-center">
+              <h3 className="text-2xl font-bold text-red-700 drop-shadow-sm">
+                ゲーム開始を待機中...
+              </h3>
+              <p className="text-red-600 mt-1">
+                ホストがゲームを開始するまでお待ちください
+              </p>
             </div>
           </div>
-        )}
+        </div>
 
         {/* プレイヤーリスト */}
-        <PlayerList
-          players={session.players}
-          maxPlayers={session.maxPlayers}
-          currentPlayerId={currentPlayer.id}
-        />
+        <div className="bg-white/30 backdrop-blur-md rounded-xl shadow-2xl p-6 border border-white/20">
+          <h2 className="text-2xl font-bold text-white mb-4 drop-shadow-md flex items-center">
+            <Users className="w-6 h-6 text-yellow-300 mr-2" />
+            参加者一覧
+          </h2>
+          <div className="grid gap-3">
+            {session.players.map((player) => (
+              <PlayerCard
+                key={player.id}
+                player={player}
+                isCurrentPlayer={player.id === currentPlayer.id}
+                isHost={player.id === session.hostId}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* 離脱ボタン */}
+        <div className="mt-6 text-center">
+          <button
+            onClick={handleLeaveSession}
+            className="bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white font-bold py-3 px-8 rounded-lg shadow-lg transform transition hover:scale-105 inline-flex items-center"
+          >
+            <LogOut className="w-5 h-5 mr-2" />
+            待機室から離脱
+          </button>
+        </div>
       </div>
 
-      {/* 名前調整通知 */}
+      {/* 名前調整通知モーダル */}
       {nameAdjustment && (
-        <NameAdjustmentNotification
-          originalName={nameAdjustment.original}
-          adjustedName={nameAdjustment.adjusted}
-          reason="duplicate"
-          onAcknowledge={acknowledgeAdjustment}
-        />
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-gradient-to-br from-pink-400 to-orange-400 rounded-xl p-1 max-w-sm w-full">
+            <div className="bg-white rounded-lg p-6">
+              <h3 className="text-xl font-bold text-gray-800 mb-3">
+                名前が調整されました
+              </h3>
+              <p className="text-gray-700 mb-4">
+                同じ名前のプレイヤーが既に存在するため、あなたの名前は
+                <span className="font-bold text-blue-600 mx-1 text-lg">
+                  「{nameAdjustment.adjusted}」
+                </span>
+                になりました。
+              </p>
+              <button
+                onClick={acknowledgeAdjustment}
+                className="w-full bg-gradient-to-r from-pink-600 to-orange-500 hover:from-pink-700 hover:to-orange-600 text-white font-bold py-3 rounded-lg shadow-lg transform transition hover:scale-105"
+              >
+                了解しました
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -343,10 +382,10 @@ const WaitingPageContent: React.FC = () => {
 const WaitingPage: React.FC = () => {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-pink-500 via-red-500 to-orange-500 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">待機ページを読み込み中...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-400 mx-auto mb-4"></div>
+          <p className="text-white text-lg font-medium drop-shadow-sm">待機ページを読み込み中...</p>
         </div>
       </div>
     }>
