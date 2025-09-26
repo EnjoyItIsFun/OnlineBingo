@@ -33,6 +33,33 @@ export interface GameSession {
 // セッション状態
 export type SessionStatus = 'waiting' | 'playing' | 'finished' | 'expired';
 
+// ========================================
+// Socket.io イベント型定義
+// ========================================
+
+export interface SocketEvents {
+  // クライアント → サーバー
+  joinGame: (data: { sessionId: string; userId: string; role: 'host' | 'player' }) => void;
+  drawNumber: (data: { sessionId: string; number: number }) => void;
+  start_game: (data: { sessionId: string }) => void;
+  reset_game: (data: { sessionId: string }) => void;
+  draw_number: (data: { sessionId: string; number: number }) => void;
+  
+  // サーバー → クライアント
+  number_drawn: (data: { number: number; drawnNumbers: number[] }) => void;
+  player_bingo: (data: { player: Player; bingoCount: number }) => void;
+  game_started: (data?: { sessionId: string }) => void;
+  player_joined: (player: Player) => void;
+  player_left: (playerId: string) => void;
+  session_updated: (session: GameSession) => void;
+  connection_error: (error: string) => void;
+  
+  // 再接続関連
+  reconnect: (data: { sessionId: string; userId: string; role: 'host' | 'player' }) => void;
+  stateRestored: (data: { gameState: GameSession; playerBoard?: number[][] }) => void;
+  reconnectError: (data: { message: string }) => void;
+}
+
 // エラーコード
 export enum ErrorCode {
   INVALID_SESSION = 'INVALID_SESSION',
@@ -97,6 +124,15 @@ export interface NameAdjustmentResult {
   reason: 'duplicate' | 'invalid' | 'length';
 }
 
+// 再接続データ
+export interface ReconnectionData {
+  sessionId: string;
+  accessToken: string;
+  playerId: string;
+  playerName: string;
+  lastActiveAt: string;
+  expiresAt: string;
+}
 
 // QRコード設定
 export interface QRCodeOptions {
