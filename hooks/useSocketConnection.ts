@@ -1,21 +1,8 @@
-// hooks/useSocketConnection.ts
-// Socket.io接続管理Hook
-
 'use client';
 
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { Player, GameSession, AuthenticationData } from '@/types';
-
-interface SocketEvents {
-  'player_joined': (player: Player) => void;
-  'player_left': (playerId: string) => void;
-  'game_started': (session: GameSession) => void;
-  'game_ended': (session: GameSession) => void;
-  'session_updated': (session: GameSession) => void;
-  'connection_error': (error: string) => void;
-  'reconnect_success': () => void;
-}
+import { AuthenticationData, SocketEvents } from '@/types';
 
 interface UseSocketConnectionReturn {
   socket: Socket | null;
