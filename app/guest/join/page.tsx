@@ -1,24 +1,15 @@
-// app/guest/join/page.tsx
-// 大会参加ページ（ゴージャスデザイン版）
-
 'use client';
 
-import { useState, useEffect, useCallback, Suspense } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { AuthenticationForm } from '@/app/components/AuthenticationForm';
-import { NameAdjustmentNotification } from '@/app/components/NameAdjustmentNotification';
-import { useQRCode } from '@/hooks/useQRCode';
 import { useNameAdjustment } from '@/hooks/useNameAdjustment';
-import { QrCode, Users, Sparkles, ArrowLeft } from 'lucide-react';
+import { Users, Sparkles, ArrowLeft, AlertCircle } from 'lucide-react';
 import { 
-  AuthenticationData, 
   JoinSessionRequest,
   JoinSessionResponse 
 } from '@/types';
 import { 
-  joinSession, 
-  validateAuthentication, 
-  generateParticipationUrl,
+  joinSession,
   normalizeErrorMessage 
 } from '@/utils/api';
 
@@ -26,78 +17,97 @@ import {
 const JoinPageContent: React.FC = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { generateQRCode, qrCodeUrl } = useQRCode();
   const { nameAdjustment, setAdjustment, acknowledgeAdjustment } = useNameAdjustment();
   
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState('');
+  const [accessToken, setAccessToken] = useState('');
   const [playerName, setPlayerName] = useState('');
-  const [showNameInput, setShowNameInput] = useState(false);
-  const [authData, setAuthData] = useState<AuthenticationData | null>(null);
 
   // URLパラメータから初期値を取得
-  const initialSessionId = searchParams.get('sessionId') || '';
-  const initialAccessToken = searchParams.get('accessToken') || '';
-
-  // QRコードの生成
   useEffect(() => {
-    if (initialSessionId && initialAccessToken) {
-      const participationUrl = generateParticipationUrl(initialSessionId, initialAccessToken);
-      generateQRCode(participationUrl, { size: 200 });
+    const initialSessionId = searchParams.get('sessionId') || searchParams.get('session') || '';
+    const initialAccessToken = searchParams.get('accessToken') || searchParams.get('token') || '';
+    
+    if (initialSessionId) {
+      setSessionId(initialSessionId);
     }
-  }, [initialSessionId, initialAccessToken, generateQRCode]);
+    if (initialAccessToken) {
+      setAccessToken(initialAccessToken);
+    }
 
-  // 認証処理
-  const handleAuthentication = useCallback(async (authenticationData: AuthenticationData) => {
-    setIsLoading(true);
+    // デバッグログ
+    console.log('URL Parameters:', {
+      sessionId: initialSessionId,
+      accessToken: initialAccessToken
+    });
+  }, [searchParams]);
+
+  // セッション参加処理（認証スキップ版）
+  const handleJoin = async (e: React.FormEvent) => {
+    e.preventDefault();
     setError(null);
+    setIsLoading(true);
 
     try {
-      // 認証データの検証
-      const validation = await validateAuthentication(authenticationData);
-      
-      if (!validation.valid) {
-        throw new Error(validation.error || '認証に失敗しました');
+      // 入力値のバリデーション
+      if (!sessionId || !/^[A-Z0-9]{6}$/.test(sessionId)) {
+        throw new Error('有効なセッションIDを入力してください（6桁の英数字）');
       }
 
-      // 認証成功 - 名前入力フェーズへ
-      setAuthData(authenticationData);
-      setShowNameInput(true);
-    } catch (err) {
-      setError(normalizeErrorMessage(err));
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+      if (!accessToken || accessToken.length < 6) {
+        throw new Error('有効なアクセストークンを入力してください');
+      }
 
-  // プレイヤー名で参加処理
-  const handleJoinWithName = useCallback(async () => {
-    if (!authData || !playerName.trim()) return;
+      if (!playerName.trim() || playerName.length > 25) {
+        throw new Error('名前を1〜25文字で入力してください');
+      }
 
-    setIsLoading(true);
-    setError(null);
+      console.log('Joining session with:', {
+        sessionId,
+        accessToken,
+        playerName: playerName.trim()
+      });
 
-    try {
+      // 参加リクエスト
       const joinRequest: JoinSessionRequest = {
-        accessToken: authData.accessToken,
+        accessToken,
         playerName: playerName.trim()
       };
 
-      const response: JoinSessionResponse = await joinSession(authData.sessionId, joinRequest);
+      const response: JoinSessionResponse = await joinSession(sessionId, joinRequest);
+
+      console.log('Join response:', response);
 
       // 名前調整があった場合の処理
       if (response.nameAdjustment) {
         setAdjustment(response.nameAdjustment);
+        
+        // LocalStorageに保存（後で通知表示用）
+        sessionStorage.setItem('nameAdjustment', JSON.stringify(response.nameAdjustment));
       }
 
-      // 待機ページへリダイレクト
-      router.push(`/guest/waiting/${authData.sessionId}?playerId=${response.playerId}&accessToken=${authData.accessToken}`);
+      // 参加情報をLocalStorageに保存
+      const participantInfo = {
+        sessionId,
+        playerId: response.playerId,
+        playerName: response.adjustedName || playerName.trim(),
+        accessToken,
+        joinedAt: new Date().toISOString()
+      };
+      localStorage.setItem('participantInfo', JSON.stringify(participantInfo));
+
+      // 待機画面へリダイレクト
+      router.push(`/guest/waiting/${sessionId}?playerId=${response.playerId}&accessToken=${accessToken}`);
+      
     } catch (err) {
+      console.error('Join error:', err);
       setError(normalizeErrorMessage(err));
     } finally {
       setIsLoading(false);
     }
-  }, [authData, playerName, setAdjustment, router]);
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-pink-500 via-red-500 to-orange-500 p-8 flex items-center justify-center">
@@ -120,172 +130,149 @@ const JoinPageContent: React.FC = () => {
           </div>
 
           {/* メインコンテンツ */}
-          <div className="bg-white/30 backdrop-blur-md p-8 space-y-8 border-b border-l border-r border-white/20">
-            {!showNameInput ? (
-              // 認証フェーズ
-              <>
-                <div className="text-center mb-6">
-                  <div className="flex items-center justify-center mb-3">
-                    <Users className="w-6 h-6 text-yellow-300 mr-2" />
-                    <h2 className="text-2xl font-bold text-white drop-shadow-sm">
-                      セッション情報を入力
-                    </h2>
-                  </div>
-                  <p className="text-white/80 text-sm">
-                    セッションIDとアクセストークンを入力してください
-                  </p>
+          <div className="bg-white/30 backdrop-blur-md p-8 border-b border-l border-r border-white/20">
+            <form onSubmit={handleJoin} className="space-y-6">
+              <div className="text-center mb-6">
+                <div className="flex items-center justify-center mb-3">
+                  <Users className="w-6 h-6 text-yellow-300 mr-2" />
+                  <h2 className="text-2xl font-bold text-white drop-shadow-sm">
+                    セッション情報を入力
+                  </h2>
                 </div>
+                <p className="text-white/80 text-sm">
+                  セッションIDとアクセストークンを入力してください
+                </p>
+              </div>
 
-                {/* 認証フォーム */}
-                <div className="space-y-6">
-                  <AuthenticationForm
-                    sessionId={initialSessionId}
-                    accessToken={initialAccessToken}
-                    onSubmit={handleAuthentication}
-                    isLoading={isLoading}
-                    error={error || undefined}
-                    allowQRScan={true}
-                  />
+              {/* セッションID入力 */}
+              <div>
+                <label htmlFor="sessionId" className="block text-white font-semibold mb-2 drop-shadow-sm">
+                  セッションID
+                </label>
+                <input
+                  type="text"
+                  id="sessionId"
+                  value={sessionId}
+                  onChange={(e) => setSessionId(e.target.value.toUpperCase())}
+                  placeholder="M9CFU4"
+                  maxLength={6}
+                  className="w-full px-4 py-3 bg-white/20 backdrop-blur-sm border border-white/40 rounded-lg text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent transition-all"
+                  disabled={isLoading}
+                  required
+                />
+              </div>
+
+              {/* アクセストークン入力 */}
+              <div>
+                <label htmlFor="accessToken" className="block text-white font-semibold mb-2 drop-shadow-sm">
+                  アクセストークン
+                </label>
+                <input
+                  type="text"
+                  id="accessToken"
+                  value={accessToken}
+                  onChange={(e) => setAccessToken(e.target.value)}
+                  placeholder="1R2SGFHX"
+                  className="w-full px-4 py-3 bg-white/20 backdrop-blur-sm border border-white/40 rounded-lg text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent transition-all"
+                  disabled={isLoading}
+                  required
+                />
+              </div>
+
+              {/* プレイヤー名入力 */}
+              <div>
+                <label htmlFor="playerName" className="block text-white font-semibold mb-2 drop-shadow-sm">
+                  あなたの名前
+                </label>
+                <input
+                  type="text"
+                  id="playerName"
+                  value={playerName}
+                  onChange={(e) => setPlayerName(e.target.value)}
+                  placeholder="表示名を入力"
+                  maxLength={25}
+                  className="w-full px-4 py-3 bg-white/20 backdrop-blur-sm border border-white/40 rounded-lg text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent transition-all"
+                  disabled={isLoading}
+                  required
+                />
+                <p className="mt-2 text-white/70 text-sm">
+                  ※同じ名前のプレイヤーがいる場合、自動的に番号が付けられます
+                </p>
+              </div>
+
+              {/* エラー表示 */}
+              {error && (
+                <div className="bg-red-500/30 backdrop-blur-sm border border-red-400/50 rounded-lg p-4 flex items-start">
+                  <AlertCircle className="w-5 h-5 text-yellow-300 mr-2 flex-shrink-0 mt-0.5" />
+                  <p className="text-white font-medium">{error}</p>
                 </div>
+              )}
 
-                {/* QRコード表示 */}
-                {qrCodeUrl && (
-                  <div className="text-center space-y-4">
-                    <div className="flex items-center justify-center mb-3">
-                      <QrCode className="w-5 h-5 text-yellow-300 mr-2" />
-                      <h3 className="text-lg font-semibold text-white drop-shadow-sm">
-                        参加用QRコード
-                      </h3>
+              {/* ボタングループ */}
+              <div className="space-y-4">
+                <button
+                  type="submit"
+                  disabled={isLoading || !sessionId || !accessToken || !playerName}
+                  className={`w-full py-4 rounded-lg font-bold text-lg transition-all transform hover:scale-105 shadow-lg
+                    ${isLoading || !sessionId || !accessToken || !playerName
+                      ? 'bg-gray-500/50 cursor-not-allowed text-white/70' 
+                      : 'bg-gradient-to-r from-pink-600 to-orange-500 hover:from-pink-700 hover:to-orange-600 text-white'}`}
+                >
+                  {isLoading ? (
+                    <div className="flex items-center justify-center">
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2" />
+                      参加中...
                     </div>
-                    <div className="inline-block bg-white rounded-lg p-4 shadow-lg">
-                      <img 
-                        src={qrCodeUrl} 
-                        alt="参加用QRコード" 
-                        className="mx-auto"
-                      />
-                    </div>
-                    <p className="text-white/70 text-sm">
-                      このQRコードをスキャンして参加できます
-                    </p>
-                  </div>
-                )}
-              </>
-            ) : (
-              // 名前入力フェーズ
-              <>
-                <div className="text-center mb-6">
-                  <div className="flex items-center justify-center mb-3">
-                    <Sparkles className="w-6 h-6 text-yellow-300 mr-2" />
-                    <h2 className="text-2xl font-bold text-white drop-shadow-sm">
-                      プレイヤー名を入力
-                    </h2>
-                  </div>
-                  <p className="text-white/80 text-sm">
-                    ゲーム中に表示される名前を入力してください
-                  </p>
-                </div>
+                  ) : (
+                    <>
+                      <Users className="w-5 h-5 inline mr-2" />
+                      ゲームに参加
+                    </>
+                  )}
+                </button>
 
-                {/* エラー表示 */}
-                {error && (
-                  <div className="bg-red-500/30 backdrop-blur-sm border border-red-400/50 rounded-lg p-4">
-                    <p className="text-white text-center font-medium">{error}</p>
-                  </div>
-                )}
+                <button
+                  type="button"
+                  onClick={() => router.push('/')}
+                  disabled={isLoading}
+                  className="w-full py-3 rounded-lg font-medium transition-colors bg-white/20 backdrop-blur-sm text-white hover:bg-white/30 border border-white/30 disabled:opacity-50"
+                >
+                  <ArrowLeft className="w-4 h-4 inline mr-2" />
+                  トップページに戻る
+                </button>
+              </div>
 
-                {/* 名前入力フォーム */}
-                <div className="space-y-4">
-                  <div>
-                    <label htmlFor="playerName" className="block text-white font-semibold mb-2 drop-shadow-sm">
-                      プレイヤー名
-                    </label>
-                    <input
-                      type="text"
-                      id="playerName"
-                      value={playerName}
-                      onChange={(e) => setPlayerName(e.target.value)}
-                      placeholder="あなたの名前を入力"
-                      maxLength={25}
-                      className="w-full px-4 py-3 bg-white/20 backdrop-blur-sm border border-white/40 rounded-lg text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent transition-all"
-                      disabled={isLoading}
-                      onKeyPress={(e) => {
-                        if (e.key === 'Enter' && playerName.trim()) {
-                          handleJoinWithName();
-                        }
-                      }}
-                    />
-                    <p className="mt-2 text-white/70 text-sm">
-                      最大25文字まで入力できます
-                    </p>
-                  </div>
-                </div>
-
-                {/* ボタングループ */}
-                <div className="space-y-4">
-                  <button
-                    onClick={handleJoinWithName}
-                    disabled={isLoading || !playerName.trim()}
-                    className={`w-full py-4 rounded-lg font-bold text-lg transition-colors transform hover:scale-105 shadow-lg
-                      ${isLoading || !playerName.trim()
-                        ? 'bg-gray-500/50 cursor-not-allowed text-white/70' 
-                        : 'bg-gradient-to-r from-pink-600 to-orange-500 hover:from-pink-700 hover:to-orange-600 text-white'}`}
-                  >
-                    {isLoading ? (
-                      <div className="flex items-center justify-center">
-                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-red-800 mr-2" />
-                        参加中...
-                      </div>
-                    ) : (
-                      <>
-                        <Users className="w-5 h-5 inline mr-2" />
-                        大会に参加する
-                      </>
-                    )}
-                  </button>
-
-                  <button
-                    onClick={() => setShowNameInput(false)}
-                    disabled={isLoading}
-                    className="w-full py-3 rounded-lg font-medium transition-colors bg-white/20 backdrop-blur-sm text-white hover:bg-white/30 border border-white/30 disabled:opacity-50 flex items-center justify-center"
-                  >
-                    <ArrowLeft className="w-4 h-4 mr-2" />
-                    戻る
-                  </button>
-                </div>
-              </>
-            )}
-
-            {/* 注意事項 */}
-            <div className="text-center">
-              <p className="text-white/80 text-sm">
-                {!showNameInput ? (
-                  '参加には有効なセッションIDとアクセストークンが必要です'
-                ) : (
-                  '同じ名前のプレイヤーがいる場合、自動的に調整されます'
-                )}
-              </p>
-            </div>
-
-            {/* トップページに戻るボタン */}
-            <div className="text-center">
-              <button
-                onClick={() => router.push('/')}
-                className="text-white/80 hover:text-white underline text-sm font-medium transition-colors"
-              >
-                トップページに戻る
-              </button>
-            </div>
+              {/* ヒント */}
+              <div className="text-center mt-6">
+                <p className="text-white/80 text-sm">
+                  💡 ヒント：セッションIDとアクセストークンは、大会のホストから共有されます
+                </p>
+              </div>
+            </form>
           </div>
         </div>
       </div>
 
-      {/* 名前調整通知 */}
+      {/* 名前調整通知（モーダル） */}
       {nameAdjustment && (
-        <NameAdjustmentNotification
-          originalName={nameAdjustment.original}
-          adjustedName={nameAdjustment.adjusted}
-          reason="duplicate"
-          onAcknowledge={acknowledgeAdjustment}
-        />
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg p-6 max-w-sm w-full">
+            <h3 className="text-lg font-bold mb-3">名前が調整されました</h3>
+            <p className="text-gray-700 mb-4">
+              同じ名前のプレイヤーが既に存在するため、あなたの名前は
+              <span className="font-bold text-blue-600 mx-1">
+                「{nameAdjustment.adjusted}」
+              </span>
+              になりました。
+            </p>
+            <button
+              onClick={acknowledgeAdjustment}
+              className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              了解しました
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
