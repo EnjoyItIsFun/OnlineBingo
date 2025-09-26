@@ -96,7 +96,7 @@ export default function CreateSessionPage() {
       // セッション情報の保存（hostId使用）
       const sessionInfo = {
         sessionId: data.sessionId,
-        hostId: data.hostId,  // hostIdを使用
+        hostId: data.hostId,
         accessToken: data.accessToken,
         name: formData.name,
         maxPlayers: formData.maxPlayers,
