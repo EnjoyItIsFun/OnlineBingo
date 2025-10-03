@@ -1,6 +1,4 @@
 // app/guest/waiting/[sessionId]/page.tsx
-// ゲスト待機ページ（ゴージャスデザイン版）
-
 'use client';
 
 import { useState, useEffect, useCallback, Suspense } from 'react';
@@ -81,7 +79,7 @@ const WaitingPageContent: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const { socket, isConnected, connect, disconnect, on, off } = useSocketConnection();
+  const { socket, isConnected, connect, disconnect, on, off, emit } = useSocketConnection();
   const { nameAdjustment, setAdjustment, acknowledgeAdjustment } = useNameAdjustment();
   const { formattedTime } = useGameTimer(
     session?.status || 'waiting',
@@ -101,7 +99,7 @@ const WaitingPageContent: React.FC = () => {
         const sessionData = await getSession(sessionId, accessToken);
         setSession(sessionData);
 
-        const player = sessionData.players.find(p => p.id === playerId);
+        const player = sessionData.players.find((p: Player) => p.id === playerId);
         if (player) {
           setCurrentPlayer(player);
           
@@ -131,13 +129,30 @@ const WaitingPageContent: React.FC = () => {
     loadInitialData();
   }, [sessionId, accessToken, playerId, connect, setAdjustment]);
 
+  // Socket.io接続後、joinGameイベントを送信
+  useEffect(() => {
+    if (!socket || !isConnected || !playerId) return;
+
+    // joinGameイベントを送信（types/index.tsに定義済み）
+    emit('joinGame', {
+      sessionId,
+      userId: playerId,
+      role: 'player'
+    });
+  }, [socket, isConnected, sessionId, playerId, emit]);
+
   // Socket.ioイベントリスナー設定
   useEffect(() => {
     if (!socket) return;
 
     const handlePlayerJoined = (player: Player) => {
+      console.log('Player joined:', player);
       setSession(prev => {
         if (!prev) return prev;
+        // 既に存在する場合は追加しない
+        if (prev.players.find(p => p.id === player.id)) {
+          return prev;
+        }
         return {
           ...prev,
           players: [...prev.players, player]
@@ -146,6 +161,7 @@ const WaitingPageContent: React.FC = () => {
     };
 
     const handlePlayerLeft = (playerId: string) => {
+      console.log('Player left:', playerId);
       setSession(prev => {
         if (!prev) return prev;
         return {
@@ -155,21 +171,70 @@ const WaitingPageContent: React.FC = () => {
       });
     };
 
+    // 型定義に合わせて修正
     const handleGameStarted = (data?: { sessionId: string }) => {
+      console.log('Game started event received:', data);
       // sessionIdの確認
-      if (data?.sessionId === sessionId) {
+      if (!data || data.sessionId === sessionId) {
+        console.log('Navigating to game page...');
         router.push(`/guest/game/${sessionId}?playerId=${playerId}&accessToken=${accessToken}`);
       }
     };
 
+    // any型を具体的な型に変更
+    const handleSessionUpdated = (updatedSession: GameSession) => {
+      console.log('Session updated:', updatedSession);
+      setSession(updatedSession);
+      
+      // ゲームが開始された場合
+      if (updatedSession.status === 'playing') {
+        console.log('Game is now playing, navigating to game page...');
+        router.push(`/guest/game/${sessionId}?playerId=${playerId}&accessToken=${accessToken}`);
+      }
+      
+      // 自分のプレイヤー情報を更新
+      const updatedPlayer = updatedSession.players.find(p => p.id === playerId);
+      if (updatedPlayer) {
+        setCurrentPlayer(updatedPlayer);
+      }
+    };
+
+    const handleConnectionError = (errorMessage: string) => {
+      console.error('Connection error:', errorMessage);
+      setError(errorMessage);
+    };
+
+    const handleSessionCancelled = (data: { sessionId: string }) => {
+      if (data.sessionId === sessionId) {
+        setError('ホストによってゲームが終了されました');
+        setTimeout(() => {
+          router.push('/guest/join');
+        }, 3000);
+      }
+    };
+
+    // イベントリスナー登録（types/index.tsに定義されているイベント）
     on('player_joined', handlePlayerJoined);
     on('player_left', handlePlayerLeft);
     on('game_started', handleGameStarted);
+    on('session_updated', handleSessionUpdated);
+    on('connection_error', handleConnectionError);
+    
+    // カスタムイベント（型定義にない）
+    if (socket) {
+      socket.on('session_cancelled', handleSessionCancelled);
+    }
 
     return () => {
       off('player_joined', handlePlayerJoined);
       off('player_left', handlePlayerLeft);
       off('game_started', handleGameStarted);
+      off('session_updated', handleSessionUpdated);
+      off('connection_error', handleConnectionError);
+      
+      if (socket) {
+        socket.off('session_cancelled');
+      }
     };
   }, [socket, on, off, router, sessionId, playerId, accessToken]);
 
@@ -212,7 +277,7 @@ const WaitingPageContent: React.FC = () => {
   }
 
   // エラー画面
-  if (error || !session || !currentPlayer) {
+  if (error && !session) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-pink-500 via-red-500 to-orange-500 flex items-center justify-center px-4">
         <div className="max-w-md w-full">
@@ -222,7 +287,7 @@ const WaitingPageContent: React.FC = () => {
               エラーが発生しました
             </h2>
             <p className="text-white/90 text-center mb-4">
-              {error || 'セッション情報を確認してください'}
+              {error}
             </p>
             <button
               onClick={() => router.push('/guest/join')}
@@ -235,6 +300,8 @@ const WaitingPageContent: React.FC = () => {
       </div>
     );
   }
+
+  if (!session || !currentPlayer) return null;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-pink-500 via-red-500 to-orange-500 p-8">
@@ -303,6 +370,13 @@ const WaitingPageContent: React.FC = () => {
             </div>
           </div>
         </div>
+
+        {/* エラー表示 */}
+        {error && (
+          <div className="bg-red-500/30 backdrop-blur-md rounded-xl p-4 mb-6 border border-red-400">
+            <p className="text-white text-center">{error}</p>
+          </div>
+        )}
 
         {/* 待機メッセージ */}
         <div className="bg-yellow-300/80 backdrop-blur-md rounded-xl p-6 mb-6 border-2 border-yellow-400 shadow-lg">
