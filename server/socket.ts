@@ -30,92 +30,199 @@ export function initSocketServer(httpServer: ReturnType<typeof createServer>) {
   io.on('connection', (socket) => {
     console.log('👤 新しいクライアントが接続:', socket.id);
 
-    // セッションに参加
-    socket.on('join-session', async (data: { sessionId: string; playerId?: string }) => {
-      const { sessionId, playerId } = data;
+    // セッションに参加（joinGameイベントを使用 - types/index.tsに定義済み）
+    socket.on('joinGame', async (data: { sessionId: string; userId: string; role: 'host' | 'player' }) => {
+      const { sessionId, userId, role } = data;
       
       // ルーム（セッション）に参加
       socket.join(sessionId);
-      console.log(`📌 Socket ${socket.id} がセッション ${sessionId} に参加`);
+      console.log(`📌 Socket ${socket.id} がセッション ${sessionId} に参加 (${role})`);
 
       // DBからセッション情報を取得
       try {
         const db = await getDatabase();
         const session = await db.collection<GameSession>('sessions').findOne({ 
           sessionId 
-        }) as GameSession | null;  // 型アサーションを追加
+        }) as GameSession | null;
 
         if (session) {
-          // 同じセッションの全員に通知
-          io?.to(sessionId).emit('session-updated', {
-            players: session.players,
-            gameStatus: session.status,  // statusプロパティを使用
-            numbers: session.numbers,
-          });
+          // セッション全体の情報を送信（session_updatedイベント）
+          io?.to(sessionId).emit('session_updated', session);
 
-          // 参加者が増えたことを通知
-          if (playerId) {
-            socket.broadcast.to(sessionId).emit('player-joined', {
-              playerId,
-              playerName: session.players.find(p => p.id === playerId)?.name,
-            });
+          // プレイヤーの場合、参加を通知
+          if (role === 'player' && userId) {
+            const player = session.players.find(p => p.id === userId);
+            if (player) {
+              socket.broadcast.to(sessionId).emit('player_joined', player);
+            }
           }
         }
       } catch (error) {
         console.error('セッション情報の取得エラー:', error);
-        socket.emit('error', { message: 'セッション情報の取得に失敗しました' });
+        socket.emit('connection_error', 'セッション情報の取得に失敗しました');
       }
     });
 
-    // ホストが番号を引く
-    socket.on('draw-number', async (data: { 
+    // ホストが番号を引く（draw_numberイベント - types/index.tsに定義済み）
+    socket.on('draw_number', async (data: { 
       sessionId: string; 
       number: number;
-      hostId: string;
     }) => {
-      const { sessionId, number, hostId } = data;
+      const { sessionId, number } = data;
 
       try {
         const db = await getDatabase();
         
-        // ホストの権限確認とセッション更新
+        // セッション更新（番号を追加）
         const result = await db.collection<GameSession>('sessions').findOneAndUpdate(
           { 
             sessionId,
-            hostId, // ホストのみが番号を引ける
-            status: 'playing'  // statusプロパティを使用
+            status: 'playing'
           },
           { 
-            $push: { numbers: number }
-            // updatedAtは型定義にないため削除
+            $push: { numbers: number },
+            $set: { currentNumber: number }
           },
           { returnDocument: 'after' }
         );
 
-        const updatedSession = result as GameSession | null;  // 型アサーション
+        const updatedSession = result as GameSession | null;
         if (updatedSession) {
-          // 全参加者に新しい番号を通知
-          io?.to(sessionId).emit('number-drawn', {
+          // 全参加者に新しい番号を通知（number_drawnイベント）
+          io?.to(sessionId).emit('number_drawn', {
             number,
-            allNumbers: updatedSession.numbers,
-            timestamp: new Date().toISOString(),
+            drawnNumbers: updatedSession.numbers
           });
+
+          // セッション情報も更新通知
+          io?.to(sessionId).emit('session_updated', updatedSession);
 
           console.log(`🎰 セッション ${sessionId} で番号 ${number} が引かれました`);
         } else {
-          socket.emit('error', { message: '権限がないか、ゲームが開始されていません' });
+          socket.emit('connection_error', 'ゲームが開始されていません');
         }
       } catch (error) {
         console.error('番号抽選エラー:', error);
-        socket.emit('error', { message: '番号の抽選に失敗しました' });
+        socket.emit('connection_error', '番号の抽選に失敗しました');
       }
     });
 
-    // ビンゴ宣言
-    socket.on('declare-bingo', async (data: {
+    // ゲーム開始（start_gameイベント - types/index.tsに定義済み）
+    socket.on('start_game', async (data: { sessionId: string }) => {
+      const { sessionId } = data;
+
+      try {
+        const db = await getDatabase();
+        const result = await db.collection<GameSession>('sessions').findOneAndUpdate(
+          { 
+            sessionId,
+            status: 'waiting'
+          },
+          { 
+            $set: { 
+              status: 'playing',
+              startedAt: new Date()
+            }
+          },
+          { returnDocument: 'after' }
+        );
+
+        const updatedSession = result as GameSession | null;
+        if (updatedSession) {
+          // 全参加者にゲーム開始を通知（game_startedイベント）
+          io?.to(sessionId).emit('game_started', {
+            sessionId: sessionId
+          });
+
+          // セッション情報も更新通知
+          io?.to(sessionId).emit('session_updated', updatedSession);
+
+          console.log(`🎮 セッション ${sessionId} のゲームが開始されました`);
+        }
+      } catch (error) {
+        console.error('ゲーム開始エラー:', error);
+        socket.emit('connection_error', 'ゲームの開始に失敗しました');
+      }
+    });
+
+    // ゲームリセット（reset_gameイベント - types/index.tsに定義済み）
+    socket.on('reset_game', async (data: { sessionId: string }) => {
+      const { sessionId } = data;
+
+      try {
+        const db = await getDatabase();
+        
+        // プレイヤーのビンゴカウントをリセット
+        const session = await db.collection<GameSession>('sessions').findOne({ sessionId });
+        if (session) {
+          const resetPlayers = session.players.map(p => ({
+            ...p,
+            bingoCount: 0
+          }));
+
+          // セッションをリセット（2つの操作に分割）
+          // まず、フィールドを更新
+          await db.collection<GameSession>('sessions').updateOne(
+            { sessionId },
+            { 
+              $set: { 
+                status: 'waiting',
+                numbers: [],
+                currentNumber: null,
+                players: resetPlayers
+              },
+              $unset: {
+                startedAt: 1  // startedAtフィールドを削除
+              }
+            }
+          );
+
+          // 更新後のセッションを取得
+          const result = await db.collection<GameSession>('sessions').findOne({ sessionId });
+
+          if (result) {
+            // 全参加者にリセットを通知（session_updatedで対応）
+            io?.to(sessionId).emit('session_updated', result);
+            
+            console.log(`🔄 セッション ${sessionId} がリセットされました`);
+          }
+        }
+      } catch (error) {
+        console.error('ゲームリセットエラー:', error);
+        socket.emit('connection_error', 'ゲームのリセットに失敗しました');
+      }
+    });
+
+    // セッション終了（カスタムイベント - 型定義にないため直接実装）
+    socket.on('cancel_session', async (data: { sessionId: string }) => {
+      const { sessionId } = data;
+
+      try {
+        // DBからセッションを削除または終了状態に更新
+        const db = await getDatabase();
+        await db.collection<GameSession>('sessions').updateOne(
+          { sessionId },
+          { $set: { status: 'finished', finishedAt: new Date() } }
+        );
+
+        // 全参加者に終了を通知
+        io?.to(sessionId).emit('session_cancelled', { sessionId });
+        
+        // 全員をルームから退出
+        const sockets = await io?.in(sessionId).fetchSockets();
+        sockets?.forEach(s => s.leave(sessionId));
+        
+        console.log(`❌ セッション ${sessionId} がキャンセルされました`);
+      } catch (error) {
+        console.error('セッション終了エラー:', error);
+      }
+    });
+
+    // プレイヤーがビンゴを宣言（カスタムイベント）
+    socket.on('declare_bingo', async (data: {
       sessionId: string;
       playerId: string;
-      bingoPattern: number[][]; // ビンゴになったマスの座標
+      bingoPattern: number[][];
     }) => {
       const { sessionId, playerId, bingoPattern } = data;
 
@@ -129,71 +236,40 @@ export function initSocketServer(httpServer: ReturnType<typeof createServer>) {
           const player = session.players.find(p => p.id === playerId);
           
           if (player && validateBingo(player.board, session.numbers, bingoPattern)) {
-            // ビンゴが正しい場合
-            // winnersプロパティは型定義にないため、別の方法で管理
-            // 例：プレイヤーのbingoCountを増やす
-            await db.collection<GameSession>('sessions').updateOne(
-              { sessionId, 'players.id': playerId },
-              { 
-                $inc: { 'players.$.bingoCount': 1 }
-              }
+            // ビンゴカウントを更新
+            const updatedPlayers = session.players.map(p => 
+              p.id === playerId 
+                ? { ...p, bingoCount: (p.bingoCount || 0) + 1 }
+                : p
             );
 
-            // 全員にビンゴ達成を通知
-            io?.to(sessionId).emit('bingo-achieved', {
-              playerId,
-              playerName: player.name,
-              pattern: bingoPattern,
-            });
+            const result = await db.collection<GameSession>('sessions').findOneAndUpdate(
+              { sessionId },
+              { $set: { players: updatedPlayers } },
+              { returnDocument: 'after' }
+            );
+
+            if (result) {
+              // player_bingoイベントで通知
+              io?.to(sessionId).emit('player_bingo', {
+                player: { ...player, bingoCount: (player.bingoCount || 0) + 1 },
+                bingoCount: (player.bingoCount || 0) + 1
+              });
+
+              // セッション情報も更新
+              io?.to(sessionId).emit('session_updated', result as GameSession);
+            }
 
             console.log(`🎉 ${player.name} がビンゴを達成！`);
           } else {
-            // ビンゴが無効な場合
-            socket.emit('bingo-invalid', {
-              message: 'ビンゴの検証に失敗しました',
+            socket.emit('bingo_invalid', {
+              message: 'ビンゴの検証に失敗しました'
             });
           }
         }
       } catch (error) {
         console.error('ビンゴ宣言エラー:', error);
-        socket.emit('error', { message: 'ビンゴの確認に失敗しました' });
-      }
-    });
-
-    // ゲーム開始（ホストのみ）
-    socket.on('start-game', async (data: { sessionId: string; hostId: string }) => {
-      const { sessionId, hostId } = data;
-
-      try {
-        const db = await getDatabase();
-        const result = await db.collection<GameSession>('sessions').findOneAndUpdate(
-          { 
-            sessionId,
-            hostId,
-            status: 'waiting'  // statusプロパティを使用
-          },
-          { 
-            $set: { 
-              status: 'playing',  // statusプロパティを使用
-              startedAt: new Date()
-              // updatedAtは型定義にないため削除
-            }
-          },
-          { returnDocument: 'after' }
-        );
-
-        const updatedSession = result as GameSession | null;  // 型アサーション
-        if (updatedSession) {
-          // 全参加者にゲーム開始を通知
-          io?.to(sessionId).emit('game-started', {
-            startedAt: updatedSession.startedAt || new Date(),
-          });
-
-          console.log(`🎮 セッション ${sessionId} のゲームが開始されました`);
-        }
-      } catch (error) {
-        console.error('ゲーム開始エラー:', error);
-        socket.emit('error', { message: 'ゲームの開始に失敗しました' });
+        socket.emit('connection_error', 'ビンゴの確認に失敗しました');
       }
     });
 
