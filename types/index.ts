@@ -1,3 +1,5 @@
+// types/index.ts
+
 // プレイヤー
 export interface Player {
   id: string;
@@ -109,6 +111,19 @@ export interface JoinSessionResponse {
   adjustedName?: string;
 }
 
+// セッション離脱リクエスト
+export interface LeaveSessionRequest {
+  playerId: string;
+  accessToken: string;
+}
+
+// セッション離脱レスポンス
+export interface LeaveSessionResponse {
+  success: boolean;
+  message: string;
+  session?: GameSession;
+}
+
 // 認証データ
 export interface AuthenticationData {
   sessionId: string;
@@ -147,6 +162,20 @@ export interface AuthenticationFormProps {
   isLoading?: boolean;
   error?: string;
   allowQRScan?: boolean;
+}
+
+// ========================================
+// APIルート用の型定義（Next.js 15対応）
+// ========================================
+
+// APIルートのコンテキスト型（Next.js 15）
+export interface APIRouteContext<T = Record<string, string>> {
+  params: Promise<T>;
+}
+
+// セッション関連のルートパラメータ
+export interface SessionRouteParams {
+  sessionId: string;
 }
 
 // ========================================
