@@ -1,5 +1,9 @@
 // types/index.ts
 
+// Pusherの型定義を追加
+import type { default as PusherClient } from 'pusher-js';
+import type { Channel, PresenceChannel } from 'pusher-js';
+
 // プレイヤー
 export interface Player {
   id: string;
@@ -66,6 +70,21 @@ export interface UseRealtimeConnectionReturn {
   off: (eventName: string, callback?: RealtimeEventHandler) => void;
   reconnect: () => void;
   members: Map<string, RealtimeMemberInfo>;
+}
+
+// Pusher接続の戻り値型
+export interface UsePusherConnectionReturn {
+  pusher: PusherClient | null; // Pusherインスタンス（具体的な型を指定）
+  channel: Channel | PresenceChannel | null; // チャンネルインスタンス（具体的な型を指定）
+  isConnected: boolean;
+  isConnecting: boolean;
+  members: Map<string, RealtimeMemberInfo>;
+  connect: () => void;
+  disconnect: () => void;
+  reconnect: () => void;
+  emit: (eventName: string, data: Record<string, unknown>) => Promise<void>;
+  on: (eventName: string, callback: RealtimeEventHandler) => void;
+  off: (eventName: string, callback?: RealtimeEventHandler) => void;
 }
 
 // ========================================
