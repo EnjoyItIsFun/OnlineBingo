@@ -3,13 +3,12 @@
 
 import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
-import { useSocketConnection } from '@/hooks/useSocketConnection';
+import { useRealtimeConnection } from '@/hooks/useRealtimeConnection';
 import { useNameAdjustment } from '@/hooks/useNameAdjustment';
 import { useGameTimer } from '@/hooks/useGameTimer';
 import { 
   GameSession, 
-  Player, 
-  AuthenticationData
+  Player
 } from '@/types';
 import { 
   getSession, 
@@ -79,7 +78,10 @@ const WaitingPageContent: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const { socket, isConnected, connect, disconnect, on, off, emit } = useSocketConnection();
+  // リアルタイム接続（Socket.io/Pusher自動切り替え）
+  const connection = useRealtimeConnection(sessionId);
+  const { isConnected, emit, on, off, reconnect, connectionType } = connection;
+
   const { nameAdjustment, setAdjustment, acknowledgeAdjustment } = useNameAdjustment();
   const { formattedTime } = useGameTimer(
     session?.status || 'waiting',
@@ -111,14 +113,6 @@ const WaitingPageContent: React.FC = () => {
             });
           }
         }
-
-        const authData: AuthenticationData = {
-          sessionId,
-          accessToken,
-          userId: playerId,
-          role: 'player'
-        };
-        connect(authData);
       } catch (err) {
         setError(normalizeErrorMessage(err));
       } finally {
@@ -127,11 +121,11 @@ const WaitingPageContent: React.FC = () => {
     };
 
     loadInitialData();
-  }, [sessionId, accessToken, playerId, connect, setAdjustment]);
+  }, [sessionId, accessToken, playerId, setAdjustment]);
 
-  // Socket.io接続後、joinGameイベントを送信
+  // 接続後、joinGameイベントを送信
   useEffect(() => {
-    if (!socket || !isConnected || !playerId) return;
+    if (!isConnected || !playerId) return;
 
     // joinGameイベントを送信（types/index.tsに定義済み）
     emit('joinGame', {
@@ -139,13 +133,14 @@ const WaitingPageContent: React.FC = () => {
       userId: playerId,
       role: 'player'
     });
-  }, [socket, isConnected, sessionId, playerId, emit]);
+    
+    console.log(`Connected via ${connectionType.toUpperCase()}`);
+  }, [isConnected, sessionId, playerId, emit, connectionType]);
 
-  // Socket.ioイベントリスナー設定
+  // リアルタイムイベントリスナー設定
   useEffect(() => {
-    if (!socket) return;
-
-    const handlePlayerJoined = (player: Player) => {
+    const handlePlayerJoined = (data: unknown) => {
+      const player = data as Player;
       console.log('Player joined:', player);
       setSession(prev => {
         if (!prev) return prev;
@@ -160,7 +155,8 @@ const WaitingPageContent: React.FC = () => {
       });
     };
 
-    const handlePlayerLeft = (playerId: string) => {
+    const handlePlayerLeft = (data: unknown) => {
+      const playerId = data as string;
       console.log('Player left:', playerId);
       setSession(prev => {
         if (!prev) return prev;
@@ -172,17 +168,19 @@ const WaitingPageContent: React.FC = () => {
     };
 
     // 型定義に合わせて修正
-    const handleGameStarted = (data?: { sessionId: string }) => {
-      console.log('Game started event received:', data);
+    const handleGameStarted = (data: unknown) => {
+      const gameData = data as { sessionId?: string } | undefined;
+      console.log('Game started event received:', gameData);
       // sessionIdの確認
-      if (!data || data.sessionId === sessionId) {
+      if (!gameData || gameData.sessionId === sessionId) {
         console.log('Navigating to game page...');
         router.push(`/guest/game/${sessionId}?playerId=${playerId}&accessToken=${accessToken}`);
       }
     };
 
     // any型を具体的な型に変更
-    const handleSessionUpdated = (updatedSession: GameSession) => {
+    const handleSessionUpdated = (data: unknown) => {
+      const updatedSession = data as GameSession;
       console.log('Session updated:', updatedSession);
       setSession(updatedSession);
       
@@ -199,13 +197,15 @@ const WaitingPageContent: React.FC = () => {
       }
     };
 
-    const handleConnectionError = (errorMessage: string) => {
+    const handleConnectionError = (data: unknown) => {
+      const errorMessage = data as string;
       console.error('Connection error:', errorMessage);
       setError(errorMessage);
     };
 
-    const handleSessionCancelled = (data: { sessionId: string }) => {
-      if (data.sessionId === sessionId) {
+    const handleSessionCancelled = (data: unknown) => {
+      const cancelData = data as { sessionId: string };
+      if (cancelData.sessionId === sessionId) {
         setError('ホストによってゲームが終了されました');
         setTimeout(() => {
           router.push('/guest/join');
@@ -220,10 +220,8 @@ const WaitingPageContent: React.FC = () => {
     on('session_updated', handleSessionUpdated);
     on('connection_error', handleConnectionError);
     
-    // カスタムイベント（型定義にない）
-    if (socket) {
-      socket.on('session_cancelled', handleSessionCancelled);
-    }
+    // カスタムイベント（session_cancelledは将来的にtypes/index.tsに追加推奨）
+    on('session_cancelled', handleSessionCancelled);
 
     return () => {
       off('player_joined', handlePlayerJoined);
@@ -231,12 +229,9 @@ const WaitingPageContent: React.FC = () => {
       off('game_started', handleGameStarted);
       off('session_updated', handleSessionUpdated);
       off('connection_error', handleConnectionError);
-      
-      if (socket) {
-        socket.off('session_cancelled');
-      }
+      off('session_cancelled', handleSessionCancelled);
     };
-  }, [socket, on, off, router, sessionId, playerId, accessToken]);
+  }, [on, off, router, sessionId, playerId, accessToken]);
 
   // セッション離脱処理
   const handleLeaveSession = useCallback(async () => {
@@ -244,25 +239,16 @@ const WaitingPageContent: React.FC = () => {
 
     try {
       await leaveSession(sessionId, currentPlayer.id, accessToken);
-      disconnect();
       router.push('/guest/join');
     } catch (err) {
       setError(normalizeErrorMessage(err));
     }
-  }, [session, currentPlayer, sessionId, accessToken, disconnect, router]);
+  }, [session, currentPlayer, sessionId, accessToken, router]);
 
   // 再接続処理
   const handleReconnect = useCallback(() => {
-    if (!sessionId || !accessToken || !playerId) return;
-
-    const authData: AuthenticationData = {
-      sessionId,
-      accessToken,
-      userId: playerId,
-      role: 'player'
-    };
-    connect(authData);
-  }, [sessionId, accessToken, playerId, connect]);
+    reconnect();
+  }, [reconnect]);
 
   // ローディング画面
   if (isLoading) {
@@ -317,6 +303,9 @@ const WaitingPageContent: React.FC = () => {
           </div>
           <p className="text-white/90 text-lg">
             セッションID: <span className="font-mono bg-white/20 px-3 py-1 rounded-lg">{session.sessionId}</span>
+          </p>
+          <p className="text-white/70 text-sm mt-1">
+            接続方式: {connectionType.toUpperCase()}
           </p>
         </div>
 

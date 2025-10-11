@@ -36,6 +36,39 @@ export interface GameSession {
 export type SessionStatus = 'waiting' | 'playing' | 'finished' | 'expired';
 
 // ========================================
+// リアルタイム接続関連の型定義
+// ========================================
+
+// 接続タイプ
+export type ConnectionType = 'socket' | 'pusher';
+
+// イベントハンドラーの汎用型
+export type RealtimeEventHandler = (data: unknown) => void;
+
+// チャンネルメンバー情報
+export interface RealtimeMemberInfo {
+  id: string;
+  name: string;
+  role: 'host' | 'player' | 'observer';
+  isHost?: boolean;
+  board?: number[][];
+  bingoCount?: number;
+  [key: string]: unknown;
+}
+
+// リアルタイム接続の戻り値型
+export interface UseRealtimeConnectionReturn {
+  isConnected: boolean;
+  isConnecting: boolean;
+  connectionType: ConnectionType;
+  emit: (eventName: string, data: Record<string, unknown>) => void | Promise<void>;
+  on: (eventName: string, callback: RealtimeEventHandler) => void;
+  off: (eventName: string, callback?: RealtimeEventHandler) => void;
+  reconnect: () => void;
+  members: Map<string, RealtimeMemberInfo>;
+}
+
+// ========================================
 // Socket.io イベント型定義
 // ========================================
 
@@ -46,6 +79,7 @@ export interface SocketEvents {
   start_game: (data: { sessionId: string }) => void;
   reset_game: (data: { sessionId: string }) => void;
   draw_number: (data: { sessionId: string; number: number }) => void;
+  cancel_session: (data: { sessionId: string }) => void;
   
   // サーバー → クライアント
   number_drawn: (data: { number: number; drawnNumbers: number[] }) => void;
@@ -55,6 +89,7 @@ export interface SocketEvents {
   player_left: (playerId: string) => void;
   session_updated: (session: GameSession) => void;
   connection_error: (error: string) => void;
+  session_cancelled: (data: { sessionId: string }) => void;
   
   // 再接続関連
   reconnect: (data: { sessionId: string; userId: string; role: 'host' | 'player' }) => void;
