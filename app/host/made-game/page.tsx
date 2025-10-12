@@ -21,23 +21,35 @@ export default function MadeGamePage() {
 
   useEffect(() => {
     // LocalStorageから最新のセッション情報を取得
-    const sessions = Object.keys(localStorage)
-      .filter(key => key.startsWith('session_'))
-      .map(key => {
-        try {
-          return JSON.parse(localStorage.getItem(key) || '');
-        } catch {
-          return null;
-        }
-      })
-      .filter(Boolean)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const storedSession = localStorage.getItem('hostSession');
+    
+    if (!storedSession) {
+      // 複数の保存キーから探す
+      const sessions = Object.keys(localStorage)
+        .filter(key => key.startsWith('session_'))
+        .map(key => {
+          try {
+            return JSON.parse(localStorage.getItem(key) || '');
+          } catch {
+            return null;
+          }
+        })
+        .filter(Boolean)
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-    if (sessions.length > 0) {
-      setSessionInfo(sessions[0]);
+      if (sessions.length > 0) {
+        setSessionInfo(sessions[0]);
+      } else {
+        // セッション情報がない場合はホーム画面へ
+        router.push('/');
+      }
     } else {
-      // セッション情報がない場合はホーム画面へ
-      router.push('/');
+      try {
+        const session = JSON.parse(storedSession);
+        setSessionInfo(session);
+      } catch {
+        router.push('/');
+      }
     }
   }, [router]);
 

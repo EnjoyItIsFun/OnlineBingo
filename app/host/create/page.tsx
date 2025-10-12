@@ -24,7 +24,7 @@ export default function CreateGamePage() {
   const [formData, setFormData] = useState<FormData>({
     name: '',
     maxPlayers: 10,
-    passphrase: '秘密の合言葉'
+    passphrase: ''  // 空文字に変更（プレースホルダーのみ表示）
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
