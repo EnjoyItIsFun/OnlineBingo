@@ -42,8 +42,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Content-Typeを最初に確認
-    const contentType = req.headers.get('content-type') || '';
+    // リクエストボディを一度テキストとして取得
+    const text = await req.text();
+    console.log('Raw request body:', text.substring(0, 100)); // 最初の100文字をログ出力
     
     let socket_id: string | null = null;
     let channel_name: string | null = null;
@@ -51,51 +52,62 @@ export async function POST(req: NextRequest) {
     let accessToken: string | null = null;
     let playerId: string | null = null;
     
-    try {
-      if (contentType.includes('application/x-www-form-urlencoded')) {
-        // URLエンコードされたフォームデータの処理（Pusherクライアントから）
-        const text = await req.text();
-        const params = new URLSearchParams(text);
-        
-        socket_id = params.get('socket_id');
-        channel_name = params.get('channel_name');
-        sessionId = params.get('sessionId');
-        accessToken = params.get('accessToken');
-        playerId = params.get('playerId');
-        
-        console.log('Form-encoded data received:', {
-          socket_id,
-          channel_name,
-          sessionId,
-          playerId,
-          hasAccessToken: !!accessToken
-        });
-      } else {
-        // JSONデータの処理（testAuth関数など）
-        const body = await req.json();
+    // 空のボディチェック
+    if (!text) {
+      console.error('Empty request body');
+      return NextResponse.json(
+        { error: 'Empty request body' },
+        { status: 400 }
+      );
+    }
+    
+    // JSONかURLエンコードかを判定
+    if (text.trim().startsWith('{')) {
+      // JSON形式の場合
+      try {
+        const body = JSON.parse(text);
         socket_id = body.socket_id;
         channel_name = body.channel_name;
         sessionId = body.sessionId;
         accessToken = body.accessToken;
         playerId = body.playerId;
         
-        console.log('JSON data received:', {
+        console.log('JSON data parsed:', {
           socket_id,
           channel_name,
           sessionId,
-          playerId,
-          hasAccessToken: !!accessToken
+          playerId
         });
+      } catch (error) {
+        console.error('Failed to parse JSON:', error);
+        return NextResponse.json(
+          { error: 'Invalid JSON format' },
+          { status: 400 }
+        );
       }
-    } catch (parseError) {
-      console.error('Failed to parse request body:', parseError);
-      return NextResponse.json(
-        { 
-          error: 'Invalid request format',
-          details: 'Failed to parse request body'
-        },
-        { status: 400 }
-      );
+    } else {
+      // URLエンコード形式の場合（socket_id=xxx&channel_name=xxx形式）
+      try {
+        const params = new URLSearchParams(text);
+        socket_id = params.get('socket_id');
+        channel_name = params.get('channel_name');
+        sessionId = params.get('sessionId');
+        accessToken = params.get('accessToken');
+        playerId = params.get('playerId');
+        
+        console.log('URL-encoded data parsed:', {
+          socket_id,
+          channel_name,
+          sessionId,
+          playerId
+        });
+      } catch (error) {
+        console.error('Failed to parse URL-encoded data:', error);
+        return NextResponse.json(
+          { error: 'Invalid URL-encoded format' },
+          { status: 400 }
+        );
+      }
     }
 
     // 必須パラメータの検証
