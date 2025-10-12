@@ -7,17 +7,42 @@ import { getDatabase } from '@/lib/database';
 import type { GameSession } from '@/types';
 import { errorLog, debugLog } from '@/utils/validation';
 
-// Pusherサーバーインスタンス
-const pusher = new Pusher({
-  appId: process.env.PUSHER_APP_ID!,
-  key: process.env.PUSHER_KEY!,
-  secret: process.env.PUSHER_SECRET!,
-  cluster: process.env.PUSHER_CLUSTER!,
-  useTLS: true,
-});
+// Pusherサーバーインスタンスの初期化（環境変数チェック付き）
+let pusher: Pusher;
+
+try {
+  // 環境変数の存在チェック
+  if (!process.env.PUSHER_APP_ID || !process.env.PUSHER_KEY || 
+      !process.env.PUSHER_SECRET || !process.env.PUSHER_CLUSTER) {
+    throw new Error('Missing required Pusher environment variables');
+  }
+
+  pusher = new Pusher({
+    appId: process.env.PUSHER_APP_ID,
+    key: process.env.PUSHER_KEY,
+    secret: process.env.PUSHER_SECRET,
+    cluster: process.env.PUSHER_CLUSTER,
+    useTLS: true,
+  });
+} catch (error) {
+  console.error('Failed to initialize Pusher:', error);
+  // エラーを投げずに後で処理する
+}
 
 export async function POST(req: NextRequest) {
   try {
+    // Pusherが初期化されているか確認
+    if (!pusher) {
+      console.error('Pusher is not initialized. Check environment variables.');
+      return NextResponse.json(
+        { 
+          error: 'Server configuration error',
+          details: 'Pusher service is not properly configured'
+        },
+        { status: 500 }
+      );
+    }
+
     const body = await req.json();
     const { socket_id, channel_name } = body;
     
@@ -64,7 +89,20 @@ export async function POST(req: NextRequest) {
     }
 
     // データベースでセッションを確認
-    const db = await getDatabase();
+    let db;
+    try {
+      db = await getDatabase();
+    } catch (dbError) {
+      console.error('Database connection error:', dbError);
+      return NextResponse.json(
+        { 
+          error: 'Database connection error',
+          details: 'Unable to connect to database'
+        },
+        { status: 500 }
+      );
+    }
+
     const session = await db.collection<GameSession>('sessions').findOne({
       sessionId,
       accessToken,

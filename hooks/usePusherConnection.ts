@@ -148,10 +148,9 @@ export const usePusherConnection = (sessionId: string | null): UsePusherConnecti
       const pusherClient = new Pusher(process.env.NEXT_PUBLIC_PUSHER_KEY!, {
         cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER!,
         
-        // 認証エンドポイントの設定を修正
-        channelAuthorization: {
-          endpoint: '/api/pusher/auth',
-          transport: 'ajax',
+        // 認証エンドポイントの設定（古いバージョン互換）
+        authEndpoint: '/api/pusher/auth',
+        auth: {
           params: {
             sessionId: reconnectionData.sessionId,
             accessToken: reconnectionData.accessToken,
