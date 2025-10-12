@@ -172,7 +172,7 @@ function WaitingContent() {
   };
 
   const handleStartGame = async () => {
-    if (!sessionInfo || players.length < 2) return;
+    if (!sessionInfo || players.length < 3) return;  // ホスト含めて3人以上必要
     
     try {
       // ゲーム開始イベントを送信
@@ -378,15 +378,15 @@ function WaitingContent() {
             <div className="mt-6">
               <button
                 onClick={handleStartGame}
-                disabled={players.length < 2}
+                disabled={players.length < 3}
                 className={`w-full py-4 rounded-lg font-bold text-lg transition-all transform ${
-                  players.length >= 2
+                  players.length >= 3
                     ? 'bg-gradient-to-r from-pink-600 to-orange-500 hover:from-pink-700 hover:to-orange-600 text-white shadow-lg hover:scale-105'
                     : 'bg-white/20 text-white/50 cursor-not-allowed'
                 }`}
               >
-                {players.length < 2 
-                  ? `あと${2 - players.length}人必要です` 
+                {players.length < 3 
+                  ? `あと${3 - players.length}人必要です` 
                   : '🎮 ゲームを開始する'}
               </button>
               <p className="text-center text-white/60 text-sm mt-2">
