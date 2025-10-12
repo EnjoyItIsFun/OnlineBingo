@@ -1,5 +1,5 @@
 // hooks/usePusherConnection.ts
-// Pusher接続管理Hook（Socket.ioからの移行版）
+// Pusher接続管理Hook（認証修正版）
 
 'use client';
 
@@ -96,27 +96,24 @@ export const usePusherConnection = (sessionId: string | null): UsePusherConnecti
     }
   }, [sessionId]);
 
-  // イベントリスナー登録
+  // イベントリスナーの登録
   const on = useCallback((eventName: string, callback: RealtimeEventHandler) => {
-    if (!channelRef.current) {
-      debugLog(`Channel not ready, queuing listener for ${eventName}`);
-    }
-
-    // ハンドラーを保存
     if (!eventHandlers.current.has(eventName)) {
       eventHandlers.current.set(eventName, new Set());
     }
     eventHandlers.current.get(eventName)?.add(callback);
-
-    // チャンネルが接続済みなら即座にバインド
+    
+    // Pusherイベント名へのマッピング
+    const pusherEventName = EVENT_MAPPING[eventName as keyof typeof EVENT_MAPPING] || eventName;
+    
+    // 既に接続されている場合は即座にバインド
     if (channelRef.current) {
-      const pusherEventName = EVENT_MAPPING[eventName as keyof typeof EVENT_MAPPING] || eventName;
       channelRef.current.bind(pusherEventName, callback);
       debugLog(`Event listener bound: ${pusherEventName}`);
     }
   }, []);
 
-  // イベントリスナー解除
+  // イベントリスナーの解除
   const off = useCallback((eventName: string, callback?: RealtimeEventHandler) => {
     const pusherEventName = EVENT_MAPPING[eventName as keyof typeof EVENT_MAPPING] || eventName;
     
@@ -147,26 +144,26 @@ export const usePusherConnection = (sessionId: string | null): UsePusherConnecti
     }
 
     try {
-      // Pusherクライアント初期化
+      // Pusherクライアント初期化（認証方法を修正）
       const pusherClient = new Pusher(process.env.NEXT_PUBLIC_PUSHER_KEY!, {
         cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER!,
         
-        // 認証エンドポイント（プライベートチャンネル用）
-        authEndpoint: '/api/pusher/auth',
-        auth: {
-          headers: {
-            'Content-Type': 'application/json',
-          },
+        // 認証エンドポイントの設定を修正
+        channelAuthorization: {
+          endpoint: '/api/pusher/auth',
+          transport: 'ajax',
           params: {
-            sessionId,
+            sessionId: reconnectionData.sessionId,
             accessToken: reconnectionData.accessToken,
             playerId: reconnectionData.playerId,
+          },
+          headers: {
+            'Content-Type': 'application/json',
           },
         },
         
         // 接続オプション
         enabledTransports: ['ws', 'wss'],
-        disabledTransports: ['xhr_polling', 'xhr_streaming'],
         forceTLS: true,
       });
 
@@ -213,6 +210,12 @@ export const usePusherConnection = (sessionId: string | null): UsePusherConnecti
           memberMap.set(member.id, member.info);
         });
         setMembers(memberMap);
+      });
+
+      presenceChannel.bind('pusher:subscription_error', (error: unknown) => {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        errorLog(`Subscription error for ${channelName}: ${errorMessage}`);
+        console.error('Subscription error details:', error);
       });
 
       presenceChannel.bind('pusher:member_added', (member: { id: string; info: RealtimeMemberInfo }) => {
@@ -265,38 +268,34 @@ export const usePusherConnection = (sessionId: string | null): UsePusherConnecti
   // 切断
   const disconnect = useCallback(() => {
     if (pusherRef.current) {
-      debugLog('Disconnecting from Pusher...');
-      
-      // チャンネルの購読解除
-      if (channelRef.current) {
-        pusherRef.current.unsubscribe(channelRef.current.name);
-        channelRef.current = null;
-        setChannel(null);
-      }
-      
-      // Pusher切断
       pusherRef.current.disconnect();
       pusherRef.current = null;
       setPusher(null);
+      setChannel(null);
       setIsConnected(false);
       setMembers(new Map());
+      debugLog('Pusher disconnected');
     }
   }, []);
 
   // 再接続
   const reconnect = useCallback(() => {
     disconnect();
-    setTimeout(() => connect(), 100);
+    setTimeout(() => {
+      connect();
+    }, 1000);
   }, [connect, disconnect]);
 
-  // 初回接続とクリーンアップ
+  // 初期接続
   useEffect(() => {
-    if (sessionId) {
+    if (sessionId && !pusherRef.current) {
       connect();
     }
-
+    
     return () => {
-      disconnect();
+      if (pusherRef.current) {
+        disconnect();
+      }
     };
   }, [sessionId, connect, disconnect]);
 
