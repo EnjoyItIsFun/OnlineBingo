@@ -1,5 +1,5 @@
 // app/api/pusher/auth/route.ts
-// Pusherプレゼンスチャンネル認証用APIルート
+// Pusherプレゼンスチャンネル認証用APIルート（修正版）
 
 import { NextRequest, NextResponse } from 'next/server';
 import Pusher from 'pusher';
@@ -20,22 +20,25 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const { socket_id, channel_name } = body;
+    
+    // Pusherクライアントから送信される認証パラメータを取得
+    // usePusherConnectionではauth.paramsとして送信されているが、
+    // Pusherはこれらをbodyに含めて送信する
+    const sessionId = body.sessionId;
+    const accessToken = body.accessToken;
+    const playerId = body.playerId;
 
-    // URLパラメータから認証情報を取得
-    const url = new URL(req.url);
-    const sessionId = url.searchParams.get('sessionId');
-    const accessToken = url.searchParams.get('accessToken');
-    const playerId = url.searchParams.get('playerId');
-
-    debugLog('Pusher auth request', {
+    debugLog('Pusher auth request received', {
       channel_name,
       sessionId,
       playerId,
-      hasAccessToken: !!accessToken
+      hasAccessToken: !!accessToken,
+      bodyKeys: Object.keys(body)
     });
 
     // 必須パラメータの検証
     if (!socket_id || !channel_name) {
+      errorLog('Missing socket_id or channel_name in auth request');
       return NextResponse.json(
         { error: 'Missing socket_id or channel_name' },
         { status: 400 }
@@ -43,6 +46,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (!sessionId || !accessToken) {
+      errorLog('Missing authentication parameters in auth request');
       return NextResponse.json(
         { error: 'Missing authentication parameters' },
         { status: 401 }
@@ -52,6 +56,7 @@ export async function POST(req: NextRequest) {
     // チャンネル名の検証（presence-session-{sessionId}形式）
     const expectedChannelName = `presence-session-${sessionId}`;
     if (channel_name !== expectedChannelName) {
+      errorLog(`Invalid channel name: expected ${expectedChannelName}, got ${channel_name}`);
       return NextResponse.json(
         { error: 'Invalid channel name' },
         { status: 403 }
@@ -66,7 +71,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (!session) {
-      errorLog(`Session not found - Pusher auth failed for sessionId: ${sessionId}, channel: ${channel_name}`);
+      errorLog(`Session not found for sessionId: ${sessionId}`);
       return NextResponse.json(
         { error: 'Invalid session or access token' },
         { status: 401 }
@@ -83,13 +88,15 @@ export async function POST(req: NextRequest) {
       userInfo = {
         id: session.hostId,
         name: 'ホスト',
-        role: 'host',
+        role: 'host' as const,
         isHost: true,
       };
+      debugLog('Authenticating host', { userId });
     } else if (playerId) {
       // プレイヤーの場合
       const player = session.players.find(p => p.id === playerId);
       if (!player) {
+        errorLog(`Player not found in session: ${playerId}`);
         return NextResponse.json(
           { error: 'Player not found in session' },
           { status: 403 }
@@ -100,20 +107,22 @@ export async function POST(req: NextRequest) {
       userInfo = {
         id: player.id,
         name: player.name,
-        role: 'player',
+        role: 'player' as const,
         isHost: false,
         board: player.board,
         bingoCount: player.bingoCount || 0,
       };
+      debugLog('Authenticating player', { userId, name: player.name });
     } else {
       // playerIdが指定されていない場合（観戦者など）
       userId = `observer-${Date.now()}`;
       userInfo = {
         id: userId,
         name: 'Observer',
-        role: 'observer',
+        role: 'observer' as const,
         isHost: false,
       };
+      debugLog('Authenticating observer', { userId });
     }
 
     // Pusher認証レスポンスを生成（プレゼンスチャンネル用）
@@ -122,12 +131,17 @@ export async function POST(req: NextRequest) {
       user_info: userInfo,
     };
     
-    const auth = pusher.authorizeChannel(socket_id, channel_name, presenceData);
+    // authorizeChannelメソッドを使用して認証
+    const authResponse = pusher.authorizeChannel(socket_id, channel_name, presenceData);
 
     debugLog('Pusher auth successful', {
       channel: channel_name,
       userId,
-      role: userInfo.role
+      role: userInfo.role,
+      authResponse: { 
+        hasAuth: !!authResponse.auth,
+        hasChannelData: !!authResponse.channel_data 
+      }
     });
 
     // 認証成功時、最終アクティブ時刻を更新
@@ -143,14 +157,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    return NextResponse.json(auth);
+    // 認証成功レスポンスを返す
+    return NextResponse.json(authResponse);
 
   } catch (error) {
-    // エラーの型を適切に処理
     const errorMessage = error instanceof Error ? error.message : 'Authentication failed';
     errorLog(`Pusher auth error: ${errorMessage}`);
+    
     return NextResponse.json(
-      { error: errorMessage },
+      { error: 'Authentication failed', details: errorMessage },
       { status: 500 }
     );
   }
