@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCollection } from '@/lib/database';
+import Pusher from 'pusher';
 import { 
   GameSession, 
   Player, 
@@ -12,6 +13,15 @@ import {
   generateBingoBoard, 
   adjustPlayerName 
 } from '@/utils/gameUtils';
+
+// Pusherインスタンス
+const pusher = new Pusher({
+  appId: process.env.PUSHER_APP_ID!,
+  key: process.env.PUSHER_KEY!,
+  secret: process.env.PUSHER_SECRET!,
+  cluster: process.env.PUSHER_CLUSTER!,
+  useTLS: true,
+});
 
 export async function POST(
   request: NextRequest,
@@ -107,6 +117,25 @@ export async function POST(
         $set: { updatedAt: new Date() }
       }
     );
+    
+    // Pusherで参加イベントを送信
+    try {
+      await pusher.trigger(
+        `presence-session-${sessionId}`,
+        'player-joined',
+        {
+          id: newPlayer.id,
+          name: newPlayer.name,
+          role: 'player',
+          isHost: false
+        }
+      );
+      
+      console.log(`Player joined event sent: ${newPlayer.name} (${newPlayer.id})`);
+    } catch (pusherError) {
+      console.error('Failed to send Pusher event:', pusherError);
+      // Pusherエラーは無視して続行（参加自体は成功）
+    }
     
     // レスポンス作成（JoinSessionResponse型に完全準拠）
     const nameAdjustmentData: NameAdjustmentResult | undefined = nameAdjustment.wasAdjusted 
