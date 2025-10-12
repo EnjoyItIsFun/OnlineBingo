@@ -6,6 +6,7 @@ import { Users, Copy, CheckCircle, Wifi, WifiOff } from 'lucide-react';
 import QRCode from 'qrcode';
 import { getClientBaseUrl, createParticipationUrl } from '@/utils/url';
 import { usePusherConnection } from '@/hooks/usePusherConnection';
+import type { RealtimeMemberInfo } from '@/types';
 
 interface SessionInfo {
   sessionId: string;
@@ -35,8 +36,24 @@ function WaitingContent() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [copied, setCopied] = useState<'sessionId' | 'accessToken' | 'url' | null>(null);
 
+  // Pusher接続前に認証情報を保存
+  useEffect(() => {
+    if (sessionId && accessToken && hostId) {
+      // ホスト用の認証情報をLocalStorageに保存（Pusher接続用）
+      const reconnectionData = {
+        sessionId,
+        accessToken,
+        playerId: hostId,
+        playerName: 'Host',
+        lastActiveAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString()
+      };
+      localStorage.setItem('reconnectionData', JSON.stringify(reconnectionData));
+    }
+  }, [sessionId, accessToken, hostId]);
+
   // Pusher接続
-  const { isConnected, emit, on, off } = usePusherConnection(sessionId || '');
+  const { isConnected, emit, on, off, members } = usePusherConnection(sessionId || '');
 
   useEffect(() => {
     if (!sessionId || !accessToken || !hostId) {
@@ -93,18 +110,46 @@ function WaitingContent() {
     });
   }, [sessionId, accessToken, hostId, router]);
 
-  // Pusherイベントリスナー設定
+  // Pusherイベントリスナー設定とメンバー管理
   useEffect(() => {
     if (!isConnected || !sessionId) return;
 
+    // プレゼンスチャンネルのメンバーから参加者リストを構築
+    if (members && members.size > 0) {
+      const playersList: Player[] = Array.from(members.entries()).map(([id, memberInfo]) => ({
+        id: id,
+        name: memberInfo.name || 'Unknown',
+        isHost: memberInfo.role === 'host'
+      }));
+      setPlayers(playersList);
+      console.log('Updated players from presence channel:', playersList);
+    }
+
     const handlePlayerJoined = (data: unknown) => {
-      const playerData = data as { player: Player };
-      setPlayers(prev => [...prev, playerData.player]);
+      console.log('Player joined event:', data);
+      const memberInfo = data as RealtimeMemberInfo;
+      if (memberInfo && memberInfo.id) {
+        const newPlayer: Player = {
+          id: memberInfo.id,
+          name: memberInfo.name || 'Unknown',
+          isHost: memberInfo.role === 'host'
+        };
+        setPlayers(prev => {
+          // 重複を防ぐ
+          if (prev.some(p => p.id === newPlayer.id)) return prev;
+          return [...prev, newPlayer];
+        });
+      }
     };
 
-    const handlePlayerLeft = (data: unknown) => {
-      const leftData = data as { playerId: string };
-      setPlayers(prev => prev.filter(p => p.id !== leftData.playerId));
+    const handlePlayerLeft = (playerId: unknown) => {
+      console.log('Player left event:', playerId);
+      if (typeof playerId === 'string') {
+        setPlayers(prev => prev.filter(p => p.id !== playerId));
+      } else if (typeof playerId === 'object' && playerId !== null && 'id' in playerId) {
+        const id = (playerId as { id: string }).id;
+        setPlayers(prev => prev.filter(p => p.id !== id));
+      }
     };
 
     on('player_joined', handlePlayerJoined);
@@ -114,7 +159,7 @@ function WaitingContent() {
       off('player_joined', handlePlayerJoined);
       off('player_left', handlePlayerLeft);
     };
-  }, [isConnected, sessionId, on, off]);
+  }, [isConnected, sessionId, members, on, off]);
 
   const handleCopy = async (text: string, type: 'sessionId' | 'accessToken' | 'url') => {
     try {
