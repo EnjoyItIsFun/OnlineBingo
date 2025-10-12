@@ -1,9 +1,19 @@
 'use client';
 
+import { Suspense } from 'react';
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
-export default function HostWaitingPage() {
+// セッション情報の型定義
+interface SessionDebugInfo {
+  sessionId: string;
+  accessToken: string;
+  hostId: string;
+  timestamp: string;
+}
+
+// 待機画面の実際のコンテンツ
+function WaitingContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   
@@ -12,13 +22,6 @@ export default function HostWaitingPage() {
   const accessToken = searchParams.get('accessToken');
   const hostId = searchParams.get('hostId');
   
-  interface SessionDebugInfo {
-    sessionId: string;
-    accessToken: string;
-    hostId: string;
-    timestamp: string;
-  }
-
   const [sessionInfo, setSessionInfo] = useState<SessionDebugInfo | null>(null);
   const [error, setError] = useState<string>('');
 
@@ -168,5 +171,26 @@ export default function HostWaitingPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// ローディング中のフォールバック
+function LoadingFallback() {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-pink-400 via-red-400 to-yellow-400 p-4 flex items-center justify-center">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto"></div>
+        <p className="mt-4 text-white">パラメータを読み込み中...</p>
+      </div>
+    </div>
+  );
+}
+
+// メインコンポーネント（Suspenseでラップ）
+export default function HostWaitingPage() {
+  return (
+    <Suspense fallback={<LoadingFallback />}>
+      <WaitingContent />
+    </Suspense>
   );
 }
