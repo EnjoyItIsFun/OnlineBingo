@@ -3,52 +3,40 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-// 型定義
-interface SessionFormData {
+interface FormData {
   name: string;
   maxPlayers: number;
-  passphrase?: string;
+  passphrase: string;
 }
 
 interface SessionResponse {
   sessionId: string;
-  hostId: string;  
   accessToken: string;
-  passphrase?: string;
+  hostId: string;
+  participationUrl: string;
+  qrCode?: string;
+  expiresAt: string;
+  message: string;
 }
 
-/**
- * ホスト用セッション作成画面
- */
-export default function CreateSessionPage() {
+export default function CreateGamePage() {
   const router = useRouter();
-  
-  // フォームデータの状態管理
-  const [formData, setFormData] = useState<SessionFormData>({
+  const [formData, setFormData] = useState<FormData>({
     name: '',
     maxPlayers: 10,
-    passphrase: ''
+    passphrase: '秘密の合言葉'
   });
-  
-  // UI状態の管理
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  /**
-   * フォーム入力値の変更ハンドラー
-   */
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type } = e.target;
-    
     setFormData(prev => ({
       ...prev,
-      [name]: type === 'number' ? parseInt(value) || 0 : value
+      [name]: type === 'number' ? parseInt(value, 10) : value
     }));
   };
 
-  /**
-   * セッション作成の処理
-   */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -59,21 +47,18 @@ export default function CreateSessionPage() {
       if (!formData.name.trim()) {
         throw new Error('大会名を入力してください');
       }
-      
-      if (formData.maxPlayers < 2 || formData.maxPlayers > 100) {
-        throw new Error('参加人数は2〜100人の間で設定してください');
+
+      if (formData.maxPlayers < 2 || formData.maxPlayers > 99) {
+        throw new Error('参加人数は2〜99人の範囲で設定してください');
       }
 
-      // APIリクエストの準備
+      // APIリクエスト
       const requestBody = {
         gameName: formData.name.trim(),
         maxPlayers: formData.maxPlayers,
-        passphrase: formData.passphrase?.trim() || undefined
+        passphrase: formData.passphrase ? formData.passphrase.trim() : undefined
       };
 
-      console.log('Sending request:', requestBody);
-
-      // セッション作成APIを呼び出し
       const response = await fetch('/api/sessions', {
         method: 'POST',
         headers: {
@@ -82,35 +67,37 @@ export default function CreateSessionPage() {
         body: JSON.stringify(requestBody)
       });
 
-      console.log('Response status:', response.status);
-
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'エラーが発生しました' }));
-        console.error('API Error:', errorData);
         throw new Error(errorData.error || `エラー: ${response.status}`);
       }
 
       const data: SessionResponse = await response.json();
       console.log('API Response:', data);
 
-      // セッション情報の保存（hostId使用）
+      // セッション情報をLocalStorageに保存
       const sessionInfo = {
         sessionId: data.sessionId,
         hostId: data.hostId,
         accessToken: data.accessToken,
         name: formData.name,
         maxPlayers: formData.maxPlayers,
-        passphrase: data.passphrase,
+        passphrase: formData.passphrase,
+        participationUrl: data.participationUrl,
+        qrCode: data.qrCode,
         createdAt: new Date().toISOString()
       };
 
-      // localStorageに保存
+      // 複数の保存方法で確実に保存
       localStorage.setItem('hostSession', JSON.stringify(sessionInfo));
+      localStorage.setItem(`session_${data.sessionId}`, JSON.stringify(sessionInfo));
       
       // 複数セッション管理用
       const allSessions = JSON.parse(localStorage.getItem('allHostSessions') || '[]');
       allSessions.push(sessionInfo);
       localStorage.setItem('allHostSessions', JSON.stringify(allSessions));
+
+      console.log('Session saved to localStorage:', sessionInfo);
 
       // 作成完了画面へ遷移
       router.push('/host/made-game');
@@ -118,7 +105,6 @@ export default function CreateSessionPage() {
     } catch (err) {
       console.error('セッション作成エラー:', err);
       setError(err instanceof Error ? err.message : '予期しないエラーが発生しました');
-    } finally {
       setIsLoading(false);
     }
   };
@@ -160,14 +146,14 @@ export default function CreateSessionPage() {
                 name="name"
                 value={formData.name}
                 onChange={handleInputChange}
-                className="w-full px-4 py-3 rounded-lg border border-white/40 bg-white/20 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-yellow-400 text-white placeholder-white/60"
-                placeholder="みんなでビンゴ！"
                 disabled={isLoading}
-                maxLength={50}
+                className="w-full px-4 py-3 bg-white/50 backdrop-blur-sm text-gray-900 rounded-lg focus:ring-2 focus:ring-yellow-400 focus:outline-none transition-all placeholder-gray-600 disabled:opacity-50"
+                placeholder="例: 新年会ビンゴ大会"
+                required
               />
             </div>
 
-            {/* 参加人数 */}
+            {/* 参加人数入力 */}
             <div className="space-y-2">
               <label htmlFor="maxPlayers" className="block text-lg font-medium text-white drop-shadow-sm">
                 参加人数
@@ -178,15 +164,16 @@ export default function CreateSessionPage() {
                 name="maxPlayers"
                 value={formData.maxPlayers}
                 onChange={handleInputChange}
-                min="2"
-                max="100"
-                className="w-full px-4 py-3 rounded-lg border border-white/40 bg-white/20 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-yellow-400 text-white placeholder-white/60"
-                placeholder="10"
                 disabled={isLoading}
+                min="2"
+                max="99"
+                className="w-full px-4 py-3 bg-white/50 backdrop-blur-sm text-gray-900 rounded-lg focus:ring-2 focus:ring-yellow-400 focus:outline-none transition-all disabled:opacity-50"
+                required
               />
+              <p className="text-xs text-white/70">※ 2〜99人の範囲で設定してください</p>
             </div>
 
-            {/* 合言葉（オプション） */}
+            {/* 合言葉入力（オプション） */}
             <div className="space-y-2">
               <label htmlFor="passphrase" className="block text-lg font-medium text-white drop-shadow-sm">
                 合言葉（オプション）
@@ -197,21 +184,18 @@ export default function CreateSessionPage() {
                 name="passphrase"
                 value={formData.passphrase}
                 onChange={handleInputChange}
-                className="w-full px-4 py-3 rounded-lg border border-white/40 bg-white/20 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-yellow-400 text-white placeholder-white/60"
-                placeholder="秘密の合言葉"
                 disabled={isLoading}
-                maxLength={50}
+                className="w-full px-4 py-3 bg-white/50 backdrop-blur-sm text-gray-900 rounded-lg focus:ring-2 focus:ring-yellow-400 focus:outline-none transition-all placeholder-gray-600 disabled:opacity-50"
+                placeholder="例: 秘密の合言葉"
               />
-              <p className="text-xs text-white/70">
-                ※ 設定すると、参加時に合言葉の入力が必要になります
-              </p>
+              <p className="text-xs text-white/70">※ 設定すると、参加時に合言葉の入力が必要になります</p>
             </div>
 
             {/* 送信ボタン */}
             <button
               type="submit"
               disabled={isLoading}
-              className={`w-full font-bold py-3 rounded-lg shadow-lg transform transition ${
+              className={`w-full py-4 rounded-lg font-bold text-lg shadow-lg transform transition-all ${
                 isLoading 
                   ? 'bg-gray-400/50 cursor-not-allowed' 
                   : 'bg-gradient-to-r from-pink-600 to-orange-500 hover:from-pink-700 hover:to-orange-600 hover:scale-105'
@@ -235,7 +219,7 @@ export default function CreateSessionPage() {
         {/* 戻るボタン */}
         <div className="mt-6 text-center">
           <button
-            onClick={() => router.push('/host')}
+            onClick={() => router.push('/')}
             disabled={isLoading}
             className="text-white hover:text-yellow-300 transition-colors font-medium drop-shadow-md"
           >
@@ -246,7 +230,7 @@ export default function CreateSessionPage() {
         {/* ヒント */}
         <div className="mt-6 bg-white/20 backdrop-blur-sm rounded-lg p-4 border border-white/30">
           <p className="text-sm text-white/90">
-            💡 ヒント：作成後、<strong>アクセストークン</strong>が生成されます。参加者はセッションIDとアクセストークンで参加できます。
+            💡 ヒント：作成後、<strong>セッションID</strong>と<strong>アクセストークン</strong>が生成されます。参加者と共有してください。
           </p>
         </div>
       </div>
