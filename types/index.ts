@@ -406,3 +406,40 @@ export interface BingoCardProps {
   size?: 'small' | 'medium' | 'large';
   className?: string;
 }
+
+// ========================================
+// MongoDB関連の型定義
+// ========================================
+
+import type { Db, MongoClient } from 'mongodb';
+
+// MongoDB接続の戻り値型
+export interface DatabaseConnection {
+  client: MongoClient;
+  db: Db;
+}
+
+// getDatabase関数の戻り値型  
+export type GetDatabaseReturn = Promise<DatabaseConnection>;
+
+// MongoDB操作用のヘルパー型
+export interface DatabaseHelpers {
+  getDatabase: () => GetDatabaseReturn;
+  getDb: () => Promise<Db>;
+  getClient: () => Promise<MongoClient>;
+}
+
+// セッションドキュメントの型（MongoDB用）
+export interface SessionDocument extends Omit<GameSession, 'createdAt' | 'expiresAt' | 'startedAt' | 'finishedAt'> {
+  createdAt: Date;
+  expiresAt: Date;
+  updatedAt?: Date;
+  startedAt?: Date;
+  finishedAt?: Date;
+}
+
+// プレイヤードキュメントの型（MongoDB用）  
+export interface PlayerDocument extends Omit<Player, 'joinedAt' | 'lastActiveAt'> {
+  joinedAt: Date;
+  lastActiveAt?: Date;
+}
