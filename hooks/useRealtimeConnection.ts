@@ -57,25 +57,25 @@ export const useRealtimeConnection = (sessionId: string | null = null): UseRealt
     }
   }, [connectionType, socketConnection, pusherConnection]);
 
-  // イベントリスナー登録
-  const on = useCallback((eventName: string, callback: RealtimeEventHandler) => {
+  // イベントリスナー登録（ジェネリック対応）
+  const on = useCallback(<T = unknown>(eventName: string, callback: RealtimeEventHandler<T>) => {
     if (connectionType === 'socket' && socketConnection?.socket) {
-      socketConnection.socket.on(eventName, callback);
+      socketConnection.socket.on(eventName, callback as RealtimeEventHandler<unknown>);
     } else if (connectionType === 'pusher' && pusherConnection) {
-      pusherConnection.on(eventName, callback);
+      pusherConnection.on<T>(eventName, callback);
     }
   }, [connectionType, socketConnection, pusherConnection]);
 
-  // イベントリスナー解除
-  const off = useCallback((eventName: string, callback?: RealtimeEventHandler) => {
+  // イベントリスナー解除（ジェネリック対応）
+  const off = useCallback(<T = unknown>(eventName: string, callback?: RealtimeEventHandler<T>) => {
     if (connectionType === 'socket' && socketConnection?.socket) {
       if (callback) {
-        socketConnection.socket.off(eventName, callback);
+        socketConnection.socket.off(eventName, callback as RealtimeEventHandler<unknown>);
       } else {
         socketConnection.socket.off(eventName);
       }
     } else if (connectionType === 'pusher' && pusherConnection) {
-      pusherConnection.off(eventName, callback);
+      pusherConnection.off<T>(eventName, callback);
     }
   }, [connectionType, socketConnection, pusherConnection]);
 
@@ -179,4 +179,3 @@ export const convertPusherEventData = (pusherData: unknown): unknown => {
   
   return pusherData;
 };
-
