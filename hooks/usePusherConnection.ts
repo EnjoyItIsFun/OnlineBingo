@@ -52,7 +52,7 @@ export const usePusherConnection = (sessionId: string | null): UsePusherConnecti
   
   const pusherRef = useRef<Pusher | null>(null);
   const channelRef = useRef<Channel | PresenceChannel | null>(null);
-  const eventHandlers = useRef<Map<string, Set<RealtimeEventHandler>>>(new Map());
+  const eventHandlers = useRef<Map<string, Set<RealtimeEventHandler<unknown>>>>(new Map());
 
   // Pusherイベントをクライアントから送信（APIルート経由）
   const emit = useCallback(async (eventName: string, data: Record<string, unknown>) => {
@@ -96,31 +96,32 @@ export const usePusherConnection = (sessionId: string | null): UsePusherConnecti
     }
   }, [sessionId]);
 
-  // イベントリスナーの登録
-  const on = useCallback((eventName: string, callback: RealtimeEventHandler) => {
+  // イベントリスナーの登録（ジェネリック対応）
+  const on = useCallback(<T = unknown>(eventName: string, callback: RealtimeEventHandler<T>) => {
     if (!eventHandlers.current.has(eventName)) {
       eventHandlers.current.set(eventName, new Set());
     }
-    eventHandlers.current.get(eventName)?.add(callback);
+    // 型を unknown として保存
+    eventHandlers.current.get(eventName)?.add(callback as RealtimeEventHandler<unknown>);
     
     // Pusherイベント名へのマッピング
     const pusherEventName = EVENT_MAPPING[eventName as keyof typeof EVENT_MAPPING] || eventName;
     
     // 既に接続されている場合は即座にバインド
     if (channelRef.current) {
-      channelRef.current.bind(pusherEventName, callback);
+      channelRef.current.bind(pusherEventName, callback as RealtimeEventHandler<unknown>);
       debugLog(`Event listener bound: ${pusherEventName}`);
     }
   }, []);
 
-  // イベントリスナーの解除
-  const off = useCallback((eventName: string, callback?: RealtimeEventHandler) => {
+  // イベントリスナーの解除（ジェネリック対応）
+  const off = useCallback(<T = unknown>(eventName: string, callback?: RealtimeEventHandler<T>) => {
     const pusherEventName = EVENT_MAPPING[eventName as keyof typeof EVENT_MAPPING] || eventName;
     
     if (channelRef.current) {
       if (callback) {
-        channelRef.current.unbind(pusherEventName, callback);
-        eventHandlers.current.get(eventName)?.delete(callback);
+        channelRef.current.unbind(pusherEventName, callback as RealtimeEventHandler<unknown>);
+        eventHandlers.current.get(eventName)?.delete(callback as RealtimeEventHandler<unknown>);
       } else {
         channelRef.current.unbind(pusherEventName);
         eventHandlers.current.delete(eventName);
