@@ -3,12 +3,16 @@
 
 import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
-import { useSocketConnection } from '@/hooks/useSocketConnection';
+import { usePusherConnection } from '@/hooks/usePusherConnection';
 import { useGameTimer } from '@/hooks/useGameTimer';
 import { 
-  GameSession, 
   Player,
-  AuthenticationData 
+  NumberDrawnEventData,
+  PlayerBingoEventData,
+  GameStartedEventData,
+  SessionUpdatedEventData,
+  DrawNumberResponse,
+  HostGameState
 } from '@/types';
 import { 
   getSession,
@@ -116,198 +120,224 @@ const GamePageContent: React.FC = () => {
   const accessToken = searchParams.get('accessToken') || '';
   const hostId = searchParams.get('hostId') || '';
 
-  const [session, setSession] = useState<GameSession | null>(null);
-  const [drawnNumbers, setDrawnNumbers] = useState<number[]>([]);
-  const [currentNumber, setCurrentNumber] = useState<number | null>(null);
-  const [remainingNumbers, setRemainingNumbers] = useState<number[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isDrawing, setIsDrawing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [isConfirmingEnd, setIsConfirmingEnd] = useState(false);
+  // 状態管理
+  const [state, setState] = useState<HostGameState>({
+    session: null,
+    drawnNumbers: [],
+    currentNumber: null,
+    remainingNumbers: [],
+    isLoading: true,
+    isDrawing: false,
+    error: null,
+    isConfirmingEnd: false
+  });
 
-  const { socket, connect, on, off, emit, disconnect } = useSocketConnection();
-  const { formattedTime } = useGameTimer(session?.status || 'waiting', 7200);
+  // Pusher接続
+  const { isConnected, on, off, emit } = usePusherConnection(sessionId);
+  const { formattedTime } = useGameTimer(state.session?.status || 'waiting', 7200);
+
+  // reconnectionDataをlocalStorageに保存
+  useEffect(() => {
+    if (sessionId && accessToken && hostId) {
+      localStorage.setItem('reconnectionData', JSON.stringify({
+        sessionId,
+        accessToken,
+        playerId: hostId,
+        role: 'host'
+      }));
+    }
+  }, [sessionId, accessToken, hostId]);
 
   // 初期データ読み込み
   useEffect(() => {
     const loadInitialData = async () => {
       try {
         const sessionData = await getSession(sessionId, accessToken);
-        setSession(sessionData);
         
-        if (sessionData.numbers && sessionData.numbers.length > 0) {
-          setDrawnNumbers(sessionData.numbers);
-          setCurrentNumber(sessionData.currentNumber || sessionData.numbers[sessionData.numbers.length - 1]);
-          
-          const allNumbers = Array.from({ length: 75 }, (_, i) => i + 1);
-          setRemainingNumbers(allNumbers.filter(n => !sessionData.numbers.includes(n)));
-        } else {
-          const allNumbers = Array.from({ length: 75 }, (_, i) => i + 1);
-          setRemainingNumbers(allNumbers);
-        }
+        const allNumbers = Array.from({ length: 75 }, (_, i) => i + 1);
+        const drawnNumbers = sessionData.numbers || [];
         
-        const authData: AuthenticationData = {
-          sessionId,
-          accessToken,
-          userId: hostId,
-          role: 'host'
-        };
-        connect(authData);
+        setState(prev => ({
+          ...prev,
+          session: sessionData,
+          drawnNumbers,
+          currentNumber: sessionData.currentNumber || (drawnNumbers.length > 0 ? drawnNumbers[drawnNumbers.length - 1] : null),
+          remainingNumbers: allNumbers.filter(n => !drawnNumbers.includes(n)),
+          isLoading: false
+        }));
       } catch (err) {
-        setError(normalizeErrorMessage(err));
-      } finally {
-        setIsLoading(false);
+        setState(prev => ({
+          ...prev,
+          error: normalizeErrorMessage(err),
+          isLoading: false
+        }));
       }
     };
 
     loadInitialData();
-  }, [sessionId, accessToken, hostId, connect]);
+  }, [sessionId, accessToken]);
 
-  // Socket.ioイベントリスナー
+  // Pusherイベントリスナー
   useEffect(() => {
-    if (!socket) return;
-
-    const handleNumberDrawn = (data: { number: number; drawnNumbers: number[] }) => {
-      setCurrentNumber(data.number);
-      setDrawnNumbers(data.drawnNumbers || []);
-      setRemainingNumbers(prev => prev.filter(n => n !== data.number));
-      setIsDrawing(false);
+    const handleNumberDrawn = (data: NumberDrawnEventData) => {
+      setState(prev => ({
+        ...prev,
+        currentNumber: data.number,
+        drawnNumbers: data.drawnNumbers || [],
+        remainingNumbers: prev.remainingNumbers.filter(n => n !== data.number),
+        isDrawing: false
+      }));
     };
 
-    const handlePlayerBingo = (data: { player: Player; bingoCount: number }) => {
-      setSession(prev => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          players: prev.players.map(p => 
+    const handlePlayerBingo = (data: PlayerBingoEventData) => {
+      setState(prev => ({
+        ...prev,
+        session: prev.session ? {
+          ...prev.session,
+          players: prev.session.players.map(p => 
             p.id === data.player.id 
               ? { ...p, bingoCount: data.bingoCount }
               : p
           )
-        };
-      });
+        } : null
+      }));
     };
 
     const handleGameStarted = () => {
-      setSession(prev => prev ? { ...prev, status: 'playing' } : prev);
+      setState(prev => ({
+        ...prev,
+        session: prev.session ? { ...prev.session, status: 'playing' } : null
+      }));
     };
 
-    const handleSessionUpdated = (updatedSession: GameSession) => {
-      setSession(updatedSession);
-      if (updatedSession.numbers) {
-        setDrawnNumbers(updatedSession.numbers);
-      }
-    };
-
-    const handleConnectionError = (errorMessage: string) => {
-      setError(errorMessage);
-      setIsDrawing(false);
-    };
-
-    const handleGameReset = () => {
-      setDrawnNumbers([]);
-      setCurrentNumber(null);
-      setRemainingNumbers(Array.from({ length: 75 }, (_, i) => i + 1));
-      setSession(prev => prev ? { 
-        ...prev, 
-        status: 'waiting',
-        numbers: [],
-        currentNumber: null,
-        players: prev.players.map(p => ({ ...p, bingoCount: 0 }))
-      } : prev);
+    const handleSessionUpdated = (data: SessionUpdatedEventData) => {
+      setState(prev => ({
+        ...prev,
+        session: data.session,
+        drawnNumbers: data.session.numbers || prev.drawnNumbers
+      }));
     };
 
     // イベントリスナー登録
-    on('number_drawn', handleNumberDrawn);
-    on('player_bingo', handlePlayerBingo);
-    on('game_started', handleGameStarted);
-    on('session_updated', handleSessionUpdated);
-    on('connection_error', handleConnectionError);
-    
-    // reset_gameイベントのリスナー（型定義にない場合は直接socketで登録）
-    if (socket) {
-      socket.on('game_reset', handleGameReset);
-      socket.on('error', (data: { message: string }) => {
-        setError(data.message);
-        setIsDrawing(false);
-      });
-    }
+    on<NumberDrawnEventData>('number_drawn', handleNumberDrawn);
+    on<PlayerBingoEventData>('player_bingo', handlePlayerBingo);
+    on<GameStartedEventData>('game_started', handleGameStarted);
+    on<SessionUpdatedEventData>('session_updated', handleSessionUpdated);
 
     return () => {
-      off('number_drawn', handleNumberDrawn);
-      off('player_bingo', handlePlayerBingo);
-      off('game_started', handleGameStarted);
-      off('session_updated', handleSessionUpdated);
-      off('connection_error', handleConnectionError);
-      
-      if (socket) {
-        socket.off('game_reset', handleGameReset);
-        socket.off('error');
-      }
+      off<NumberDrawnEventData>('number_drawn', handleNumberDrawn);
+      off<PlayerBingoEventData>('player_bingo', handlePlayerBingo);
+      off<GameStartedEventData>('game_started', handleGameStarted);
+      off<SessionUpdatedEventData>('session_updated', handleSessionUpdated);
     };
-  }, [socket, on, off]);
+  }, [on, off]);
 
   // ゲーム開始
-  const handleStartGame = useCallback(() => {
-    if (!socket || session?.status !== 'waiting') return;
+  const handleStartGame = useCallback(async () => {
+    if (!isConnected || state.session?.status !== 'waiting') return;
     
-    emit('start_game', { sessionId });
-    setSession(prev => prev ? { ...prev, status: 'playing' } : prev);
-  }, [socket, session, sessionId, emit]);
+    try {
+      await emit('start_game', { sessionId });
+      setState(prev => ({
+        ...prev,
+        session: prev.session ? { ...prev.session, status: 'playing' } : null
+      }));
+    } catch {
+      setState(prev => ({
+        ...prev,
+        error: 'ゲーム開始に失敗しました'
+      }));
+    }
+  }, [isConnected, state.session, sessionId, emit]);
 
-  // 番号抽選
-  const handleDrawNumber = useCallback(() => {
-    if (!socket || remainingNumbers.length === 0 || isDrawing) return;
+  // 番号抽選（APIルート使用）
+  const handleDrawNumber = useCallback(async () => {
+    if (state.remainingNumbers.length === 0 || state.isDrawing) return;
     
-    setIsDrawing(true);
-    setError(null);
+    setState(prev => ({ ...prev, isDrawing: true, error: null }));
     
-    const randomIndex = Math.floor(Math.random() * remainingNumbers.length);
-    const newNumber = remainingNumbers[randomIndex];
-    
-    emit('draw_number', { 
-      sessionId, 
-      number: newNumber
-    });
-    
-    // タイムアウト処理（5秒経っても応答がない場合）
-    setTimeout(() => {
-      if (isDrawing) {
-        setIsDrawing(false);
-        setError('番号の抽選に失敗しました。再度お試しください。');
+    try {
+      const response = await fetch(`/api/sessions/${sessionId}/draw`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          accessToken,
+          hostId
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || '番号の抽選に失敗しました');
       }
-    }, 5000);
-  }, [socket, remainingNumbers, sessionId, isDrawing, emit]);
+
+      const data: DrawNumberResponse = await response.json();
+      
+      // Pusherイベントで自動的に更新されるため、ここでは成功のみ確認
+      if (!data.success) {
+        throw new Error(data.message || '番号の抽選に失敗しました');
+      }
+    } catch (err) {
+      setState(prev => ({
+        ...prev,
+        isDrawing: false,
+        error: err instanceof Error ? err.message : '番号の抽選に失敗しました'
+      }));
+    }
+  }, [state.remainingNumbers.length, state.isDrawing, sessionId, accessToken, hostId]);
 
   // ゲームリセット
-  const handleResetGame = useCallback(() => {
-    if (!socket) return;
+  const handleResetGame = useCallback(async () => {
+    if (!isConnected) return;
     
-    emit('reset_game', { sessionId });
-  }, [socket, sessionId, emit]);
+    try {
+      await emit('reset_game', { sessionId });
+      
+      const allNumbers = Array.from({ length: 75 }, (_, i) => i + 1);
+      setState(prev => ({
+        ...prev,
+        drawnNumbers: [],
+        currentNumber: null,
+        remainingNumbers: allNumbers,
+        session: prev.session ? {
+          ...prev.session,
+          status: 'waiting',
+          numbers: [],
+          currentNumber: null,
+          players: prev.session.players.map(p => ({ ...p, bingoCount: 0 }))
+        } : null
+      }));
+    } catch {
+      setState(prev => ({
+        ...prev,
+        error: 'ゲームリセットに失敗しました'
+      }));
+    }
+  }, [isConnected, sessionId, emit]);
 
   // ゲーム終了
   const handleEndGame = useCallback(async () => {
-    if (!isConfirmingEnd) {
-      setIsConfirmingEnd(true);
-      setTimeout(() => setIsConfirmingEnd(false), 3000); // 3秒後に自動でリセット
+    if (!state.isConfirmingEnd) {
+      setState(prev => ({ ...prev, isConfirmingEnd: true }));
+      setTimeout(() => setState(prev => ({ ...prev, isConfirmingEnd: false })), 3000);
       return;
     }
 
     try {
-      // Socket.ioでセッション終了を通知（cancel_sessionイベントを使用）
-      if (socket) {
-        socket.emit('cancel_session', { sessionId });
-      }
-      
-      disconnect();
+      await emit('cancel_session', { sessionId });
       router.push('/host');
     } catch (err) {
-      setError(normalizeErrorMessage(err));
+      setState(prev => ({
+        ...prev,
+        error: normalizeErrorMessage(err)
+      }));
     }
-  }, [isConfirmingEnd, socket, sessionId, disconnect, router]);
+  }, [state.isConfirmingEnd, sessionId, emit, router]);
 
-  if (isLoading) {
+  // ローディング画面
+  if (state.isLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-pink-500 via-red-500 to-orange-500 flex items-center justify-center">
         <div className="text-center">
@@ -318,7 +348,8 @@ const GamePageContent: React.FC = () => {
     );
   }
 
-  if (error && !session) {
+  // エラー画面
+  if (state.error && !state.session) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-pink-500 via-red-500 to-orange-500 flex items-center justify-center px-4">
         <div className="max-w-md w-full">
@@ -327,7 +358,7 @@ const GamePageContent: React.FC = () => {
             <h2 className="text-xl font-bold text-white text-center mb-2 drop-shadow-md">
               エラーが発生しました
             </h2>
-            <p className="text-white/90 text-center mb-4">{error}</p>
+            <p className="text-white/90 text-center mb-4">{state.error}</p>
             <button
               onClick={() => router.push('/host')}
               className="w-full bg-gradient-to-r from-pink-600 to-orange-500 hover:from-pink-700 hover:to-orange-600 text-white font-bold py-3 rounded-lg shadow-lg transform transition hover:scale-105"
@@ -340,7 +371,7 @@ const GamePageContent: React.FC = () => {
     );
   }
 
-  if (!session) return null;
+  if (!state.session) return null;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-pink-500 via-red-500 to-orange-500 p-8">
@@ -350,7 +381,7 @@ const GamePageContent: React.FC = () => {
           <div className="flex items-center justify-center mb-4">
             <Crown className="w-10 h-10 text-yellow-300 mr-3" />
             <h1 className="text-4xl font-bold text-white drop-shadow-lg">
-              {session.gameName}
+              {state.session.gameName}
             </h1>
             <Sparkles className="w-10 h-10 text-yellow-300 ml-3" />
           </div>
@@ -370,43 +401,43 @@ const GamePageContent: React.FC = () => {
               <div className="flex justify-center mb-6">
                 <div className="w-32 h-32 rounded-full bg-gradient-to-br from-yellow-400 to-yellow-600 border-4 border-red-600 flex items-center justify-center shadow-xl">
                   <span className="text-5xl font-bold text-red-700 drop-shadow-md">
-                    {currentNumber || '-'}
+                    {state.currentNumber || '-'}
                   </span>
                 </div>
               </div>
 
               {/* エラー表示 */}
-              {error && (
+              {state.error && (
                 <div className="mb-4 p-3 bg-red-500/30 border border-red-400 rounded-lg">
-                  <p className="text-white text-sm text-center">{error}</p>
+                  <p className="text-white text-sm text-center">{state.error}</p>
                 </div>
               )}
 
-              {/* 既出番号（全履歴） */}
-              {drawnNumbers.length > 0 && (
+              {/* 既出番号 */}
+              {state.drawnNumbers.length > 0 && (
                 <div className="mt-6 bg-white/20 rounded-lg p-4">
                   <h3 className="text-white font-bold text-center mb-3 drop-shadow-sm">
-                    既出番号 ({drawnNumbers.length}/75)
+                    既出番号 ({state.drawnNumbers.length}/75)
                   </h3>
-                  <NumberHistory numbers={drawnNumbers} />
+                  <NumberHistory numbers={state.drawnNumbers} />
                 </div>
               )}
 
               {/* ステータス */}
               <div className="mt-6 grid grid-cols-2 gap-4">
                 <div className="bg-white/20 rounded-lg p-3 text-center">
-                  <p className="text-2xl font-bold text-white drop-shadow-sm">{drawnNumbers.length}</p>
+                  <p className="text-2xl font-bold text-white drop-shadow-sm">{state.drawnNumbers.length}</p>
                   <p className="text-sm text-white/80">抽選済み</p>
                 </div>
                 <div className="bg-white/20 rounded-lg p-3 text-center">
-                  <p className="text-2xl font-bold text-white drop-shadow-sm">{remainingNumbers.length}</p>
+                  <p className="text-2xl font-bold text-white drop-shadow-sm">{state.remainingNumbers.length}</p>
                   <p className="text-sm text-white/80">残り</p>
                 </div>
               </div>
 
               {/* 操作ボタン */}
               <div className="mt-6 space-y-3">
-                {session.status === 'waiting' ? (
+                {state.session.status === 'waiting' ? (
                   <button
                     onClick={handleStartGame}
                     className="w-full bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-bold py-4 rounded-lg shadow-lg transform transition hover:scale-105 flex items-center justify-center"
@@ -418,10 +449,10 @@ const GamePageContent: React.FC = () => {
                   <>
                     <button
                       onClick={handleDrawNumber}
-                      disabled={remainingNumbers.length === 0 || isDrawing}
+                      disabled={state.remainingNumbers.length === 0 || state.isDrawing}
                       className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 text-red-800 font-bold py-4 rounded-lg shadow-lg transform transition hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
                     >
-                      {isDrawing ? (
+                      {state.isDrawing ? (
                         <>
                           <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-red-800 mr-2" />
                           抽選中...
@@ -444,12 +475,12 @@ const GamePageContent: React.FC = () => {
                 <button
                   onClick={handleEndGame}
                   className={`w-full py-3 rounded-lg font-bold shadow-lg flex items-center justify-center transition-all
-                    ${isConfirmingEnd 
+                    ${state.isConfirmingEnd 
                       ? 'bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white animate-pulse' 
                       : 'bg-white/20 backdrop-blur-sm text-white hover:bg-white/30 border border-white/30'}`}
                 >
                   <XCircle className="w-5 h-5 mr-2" />
-                  {isConfirmingEnd 
+                  {state.isConfirmingEnd 
                     ? '本当にゲームを終了しますか？' 
                     : 'ゲームを終了'}
                 </button>
@@ -474,7 +505,7 @@ const GamePageContent: React.FC = () => {
                   <span className="text-white font-semibold">参加者</span>
                 </div>
                 <span className="text-xl font-bold text-white drop-shadow-sm">
-                  {session.players.length}/{session.maxPlayers}
+                  {state.session.players.length}/{state.session.maxPlayers}
                 </span>
               </div>
             </div>
@@ -486,7 +517,7 @@ const GamePageContent: React.FC = () => {
                 参加者ランキング
               </h3>
               <div className="space-y-2 max-h-96 overflow-y-auto">
-                {session.players
+                {state.session.players
                   .sort((a, b) => (b.bingoCount || 0) - (a.bingoCount || 0))
                   .map((player, index) => (
                     <PlayerCard
@@ -499,6 +530,13 @@ const GamePageContent: React.FC = () => {
             </div>
           </div>
         </div>
+
+        {/* 接続状態表示 */}
+        {!isConnected && (
+          <div className="fixed bottom-4 right-4 bg-red-600 text-white px-4 py-2 rounded-lg shadow-lg">
+            接続が切断されました。再接続中...
+          </div>
+        )}
       </div>
     </div>
   );

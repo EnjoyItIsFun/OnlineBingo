@@ -1,30 +1,19 @@
+// app/guest/game/[sessionId]/page.tsx
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { useSocketConnection } from '@/hooks/useSocketConnection';
-
-// 型定義
-interface BingoCell {
-  number: number;
-  marked: boolean;
-}
-
-interface Player {
-  id: string;
-  name: string;
-  board: number[][];
-  bingoCount: number;
-}
-
-interface GameSession {
-  sessionId: string;
-  gameName: string;
-  status: 'waiting' | 'playing' | 'finished';
-  currentNumber: number | null;
-  numbers: number[];
-  players: Player[];
-}
+import { usePusherConnection } from '@/hooks/usePusherConnection';
+import {
+  BingoCell,
+  Player,
+  GameSession,
+  GuestGameState,
+  BingoCheckResult,
+  NumberDrawnEventData,
+  GameStartedEventData,
+  SessionUpdatedEventData
+} from '@/types';
 
 interface GuestGamePageProps {
   params: Promise<{ sessionId: string }>;
@@ -42,7 +31,7 @@ const getBingoLetter = (number: number): string => {
 };
 
 // ビンゴ判定関数
-const checkBingo = (board: BingoCell[][]): { count: number; lines: string[] } => {
+const checkBingo = (board: BingoCell[][]): BingoCheckResult => {
   const lines: string[] = [];
   let count = 0;
 
@@ -74,25 +63,31 @@ const checkBingo = (board: BingoCell[][]): { count: number; lines: string[] } =>
     count++;
   }
 
-  return { count, lines };
+  return { count, lines, newBingo: false };
 };
 
 export default function GuestGamePage({ params, searchParams }: GuestGamePageProps) {
   const router = useRouter();
-  const [session, setSession] = useState<GameSession | null>(null);
-  const [board, setBoard] = useState<BingoCell[][]>([]);
-  const [currentNumber, setCurrentNumber] = useState<number | null>(null);
-  const [drawnNumbers, setDrawnNumbers] = useState<number[]>([]);
-  const [bingoLines, setBingoLines] = useState<string[]>([]);
-  const [bingoCount, setBingoCount] = useState(0);
-  const [showBingoAnimation, setShowBingoAnimation] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [playerName, setPlayerName] = useState<string>('');
+  
+  // 状態管理
+  const [state, setState] = useState<GuestGameState>({
+    session: null,
+    board: [],
+    currentNumber: null,
+    drawnNumbers: [],
+    bingoLines: [],
+    bingoCount: 0,
+    showBingoAnimation: false,
+    loading: true,
+    error: null,
+    playerName: ''
+  });
+
   const [resolvedParams, setResolvedParams] = useState<{ sessionId: string } | null>(null);
   const [resolvedSearchParams, setResolvedSearchParams] = useState<{ playerId?: string; token?: string } | null>(null);
 
-  const { socket, isConnected } = useSocketConnection();
+  // Pusher接続
+  const { isConnected, on, off, emit } = usePusherConnection(resolvedParams?.sessionId || null);
 
   // PromiseのparamsとsearchParamsを解決
   useEffect(() => {
@@ -101,6 +96,18 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
       setResolvedSearchParams(sp);
     });
   }, [params, searchParams]);
+
+  // reconnectionDataをlocalStorageに保存
+  useEffect(() => {
+    if (resolvedParams?.sessionId && resolvedSearchParams?.token && resolvedSearchParams?.playerId) {
+      localStorage.setItem('reconnectionData', JSON.stringify({
+        sessionId: resolvedParams.sessionId,
+        accessToken: resolvedSearchParams.token,
+        playerId: resolvedSearchParams.playerId,
+        role: 'player'
+      }));
+    }
+  }, [resolvedParams, resolvedSearchParams]);
 
   // セッション情報とプレイヤー情報の取得
   useEffect(() => {
@@ -119,11 +126,8 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
           throw new Error('セッション情報の取得に失敗しました');
         }
 
-        const sessionData = await sessionRes.json();
-        setSession(sessionData);
-        setDrawnNumbers(sessionData.numbers || []);
-        setCurrentNumber(sessionData.currentNumber);
-
+        const sessionData: GameSession = await sessionRes.json();
+        
         // プレイヤー情報から自分のボードを取得
         const player = sessionData.players.find(
           (p: Player) => p.id === resolvedSearchParams.playerId
@@ -133,8 +137,6 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
           throw new Error('プレイヤー情報が見つかりません');
         }
 
-        setPlayerName(player.name);
-
         // ボードを初期化（マーク状態を含む）
         const initialBoard: BingoCell[][] = player.board.map((row: number[]) =>
           row.map((num: number) => ({
@@ -142,41 +144,51 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
             marked: num === 0 || (sessionData.numbers || []).includes(num)
           }))
         );
-
-        setBoard(initialBoard);
         
         // 初期ビンゴチェック
         const { count, lines } = checkBingo(initialBoard);
-        setBingoCount(count);
-        setBingoLines(lines);
 
-        setLoading(false);
+        setState({
+          session: sessionData,
+          board: initialBoard,
+          currentNumber: sessionData.currentNumber,
+          drawnNumbers: sessionData.numbers || [],
+          bingoLines: lines,
+          bingoCount: count,
+          showBingoAnimation: false,
+          loading: false,
+          error: null,
+          playerName: player.name
+        });
+
       } catch (err) {
-        setError(err instanceof Error ? err.message : '予期しないエラーが発生しました');
-        setLoading(false);
+        setState(prev => ({
+          ...prev,
+          error: err instanceof Error ? err.message : '予期しないエラーが発生しました',
+          loading: false
+        }));
       }
     };
 
     fetchData();
   }, [resolvedParams, resolvedSearchParams]);
 
-  // Socket.ioイベントリスナー
+  // Pusherイベントリスナー
   useEffect(() => {
-    if (!socket || !resolvedParams || !resolvedSearchParams) return;
+    if (!resolvedParams || !resolvedSearchParams) return;
 
     // ゲーム開始
-    socket.on('gameStarted', () => {
-      setSession(prev => prev ? { ...prev, status: 'playing' } : null);
-    });
+    const handleGameStarted = () => {
+      setState(prev => ({
+        ...prev,
+        session: prev.session ? { ...prev.session, status: 'playing' } : null
+      }));
+    };
 
     // 番号が引かれた
-    socket.on('numberDrawn', (data: { number: number; drawnNumbers: number[] }) => {
-      setCurrentNumber(data.number);
-      setDrawnNumbers(data.drawnNumbers);
-
-      // ボードを更新
-      setBoard(prevBoard => {
-        const newBoard = prevBoard.map(row =>
+    const handleNumberDrawn = (data: NumberDrawnEventData) => {
+      setState(prev => {
+        const newBoard = prev.board.map(row =>
           row.map(cell => ({
             ...cell,
             marked: cell.marked || cell.number === data.number
@@ -187,13 +199,11 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
         const { count, lines } = checkBingo(newBoard);
         
         // 新しいビンゴが達成された場合
-        if (count > bingoCount) {
-          setBingoCount(count);
-          setBingoLines(lines);
-          setShowBingoAnimation(true);
-          
+        const newBingo = count > prev.bingoCount;
+        
+        if (newBingo) {
           // サーバーに通知
-          socket.emit('bingoAchieved', {
+          emit('bingo_achieved', {
             sessionId: resolvedParams.sessionId,
             playerId: resolvedSearchParams.playerId,
             bingoCount: count,
@@ -201,35 +211,59 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
           });
 
           // アニメーションを3秒後に非表示
-          setTimeout(() => setShowBingoAnimation(false), 3000);
+          setTimeout(() => {
+            setState(s => ({ ...s, showBingoAnimation: false }));
+          }, 3000);
         }
 
-        return newBoard;
+        return {
+          ...prev,
+          currentNumber: data.number,
+          drawnNumbers: data.drawnNumbers,
+          board: newBoard,
+          bingoCount: count,
+          bingoLines: lines,
+          showBingoAnimation: newBingo
+        };
       });
-    });
+    };
+
+    // セッション更新
+    const handleSessionUpdated = (data: SessionUpdatedEventData) => {
+      setState(prev => ({
+        ...prev,
+        session: data.session
+      }));
+    };
 
     // ゲーム終了
-    socket.on('gameEnded', (data: { winners: string[] }) => {
-      setSession(prev => prev ? { ...prev, status: 'finished' } : null);
-      
-      // 勝者情報を含めて結果画面へ遷移
-      const winnersParam = encodeURIComponent(data.winners.join(','));
-      router.push(`/guest/result/${resolvedParams.sessionId}?playerId=${resolvedSearchParams.playerId}&winners=${winnersParam}`);
-    });
+    const handleGameEnded = () => {
+      setState(prev => ({
+        ...prev,
+        session: prev.session ? { ...prev.session, status: 'finished' } : null
+      }));
+    };
+
+    // イベントリスナー登録
+    on<GameStartedEventData>('game_started', handleGameStarted);
+    on<NumberDrawnEventData>('number_drawn', handleNumberDrawn);
+    on<SessionUpdatedEventData>('session_updated', handleSessionUpdated);
+    on('game_ended', handleGameEnded);
 
     return () => {
-      socket.off('gameStarted');
-      socket.off('numberDrawn');
-      socket.off('gameEnded');
+      off<GameStartedEventData>('game_started', handleGameStarted);
+      off<NumberDrawnEventData>('number_drawn', handleNumberDrawn);
+      off<SessionUpdatedEventData>('session_updated', handleSessionUpdated);
+      off('game_ended', handleGameEnded);
     };
-  }, [socket, bingoCount, resolvedParams, resolvedSearchParams, router]);
+  }, [resolvedParams, resolvedSearchParams, on, off, emit]);
 
   // セルをクリックしてマーク/解除（手動調整用）
   const toggleCell = useCallback((row: number, col: number) => {
-    if (board[row][col].number === 0) return; // 中央のフリースペースは変更不可
+    if (state.board[row][col].number === 0) return; // 中央のフリースペースは変更不可
 
-    setBoard(prevBoard => {
-      const newBoard = prevBoard.map((r, rIdx) =>
+    setState(prev => {
+      const newBoard = prev.board.map((r, rIdx) =>
         r.map((cell, cIdx) => {
           if (rIdx === row && cIdx === col) {
             return { ...cell, marked: !cell.marked };
@@ -240,15 +274,18 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
 
       // ビンゴチェック
       const { count, lines } = checkBingo(newBoard);
-      setBingoCount(count);
-      setBingoLines(lines);
 
-      return newBoard;
+      return {
+        ...prev,
+        board: newBoard,
+        bingoCount: count,
+        bingoLines: lines
+      };
     });
-  }, [board]);
+  }, [state.board]);
 
   // ローディング画面
-  if (loading) {
+  if (state.loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-600 to-blue-600 flex items-center justify-center">
         <div className="text-white text-2xl">読み込み中...</div>
@@ -257,12 +294,12 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
   }
 
   // エラー画面
-  if (error) {
+  if (state.error) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-600 to-blue-600 flex items-center justify-center">
         <div className="bg-white rounded-lg p-8 max-w-md">
           <h2 className="text-2xl font-bold text-red-600 mb-4">エラー</h2>
-          <p className="text-gray-700">{error}</p>
+          <p className="text-gray-700">{state.error}</p>
           <button
             onClick={() => router.push('/')}
             className="mt-4 w-full bg-blue-600 text-white rounded-lg py-2 hover:bg-blue-700"
@@ -282,13 +319,13 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
         <div className="bg-white rounded-lg shadow-lg p-4 mb-4">
           <div className="flex justify-between items-center">
             <div>
-              <h1 className="text-2xl font-bold text-gray-800">{session?.gameName}</h1>
-              <p className="text-gray-600">プレイヤー: {playerName}</p>
+              <h1 className="text-2xl font-bold text-gray-800">{state.session?.gameName}</h1>
+              <p className="text-gray-600">プレイヤー: {state.playerName}</p>
             </div>
             <div className="text-right">
-              {bingoCount > 0 && (
+              {state.bingoCount > 0 && (
                 <div className="bg-yellow-400 text-yellow-900 px-4 py-2 rounded-full font-bold">
-                  ビンゴ {bingoCount}列達成！
+                  ビンゴ {state.bingoCount}列達成！
                 </div>
               )}
             </div>
@@ -312,7 +349,7 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
               </div>
 
               <div className="grid grid-cols-5 gap-2">
-                {board.map((row, rowIdx) =>
+                {state.board.map((row, rowIdx) =>
                   row.map((cell, colIdx) => (
                     <button
                       key={`${rowIdx}-${colIdx}`}
@@ -326,7 +363,7 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
                             ? 'bg-purple-600 text-white scale-95 shadow-inner'
                             : 'bg-gray-100 hover:bg-gray-200 text-gray-800'
                         }
-                        ${cell.number === currentNumber ? 'ring-4 ring-yellow-400 animate-pulse' : ''}
+                        ${cell.number === state.currentNumber ? 'ring-4 ring-yellow-400 animate-pulse' : ''}
                       `}
                     >
                       {cell.number === 0 ? 'FREE' : cell.number}
@@ -336,10 +373,10 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
               </div>
 
               {/* ビンゴライン表示 */}
-              {bingoLines.length > 0 && (
+              {state.bingoLines.length > 0 && (
                 <div className="mt-4 p-3 bg-yellow-50 border-2 border-yellow-400 rounded-lg">
                   <p className="text-sm font-semibold text-yellow-900">
-                    達成ライン: {bingoLines.join(', ')}
+                    達成ライン: {state.bingoLines.join(', ')}
                   </p>
                 </div>
               )}
@@ -351,13 +388,13 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
             {/* 現在の番号 */}
             <div className="bg-white rounded-lg shadow-lg p-6 mb-4">
               <h2 className="text-lg font-bold text-gray-800 mb-4">現在の番号</h2>
-              {currentNumber ? (
+              {state.currentNumber ? (
                 <div className="text-center">
                   <div className="text-4xl font-bold text-purple-600">
-                    {getBingoLetter(currentNumber)}-{currentNumber}
+                    {getBingoLetter(state.currentNumber)}-{state.currentNumber}
                   </div>
                   <div className="text-sm text-gray-600 mt-2">
-                    {drawnNumbers.length}個目
+                    {state.drawnNumbers.length}個目
                   </div>
                 </div>
               ) : (
@@ -371,25 +408,25 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
             <div className="bg-white rounded-lg shadow-lg p-6">
               <h2 className="text-lg font-bold text-gray-800 mb-4">既出番号（最新10個）</h2>
               <div className="space-y-2">
-                {drawnNumbers.slice(-10).reverse().map((num, idx) => (
+                {state.drawnNumbers.slice(-10).reverse().map((num, idx) => (
                   <div
                     key={num}
                     className={`
                       flex items-center justify-between p-2 rounded
-                      ${idx === 0 && num === currentNumber ? 'bg-yellow-100 border-2 border-yellow-400' : 'bg-gray-50'}
+                      ${idx === 0 && num === state.currentNumber ? 'bg-yellow-100 border-2 border-yellow-400' : 'bg-gray-50'}
                     `}
                   >
                     <span className="font-semibold">
                       {getBingoLetter(num)}-{num}
                     </span>
-                    {idx === 0 && num === currentNumber && (
+                    {idx === 0 && num === state.currentNumber && (
                       <span className="text-xs bg-yellow-400 text-yellow-900 px-2 py-1 rounded">
                         最新
                       </span>
                     )}
                   </div>
                 ))}
-                {drawnNumbers.length === 0 && (
+                {state.drawnNumbers.length === 0 && (
                   <p className="text-gray-400 text-center">
                     まだ番号が引かれていません
                   </p>
@@ -400,11 +437,11 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
         </div>
 
         {/* ビンゴアニメーション */}
-        {showBingoAnimation && (
+        {state.showBingoAnimation && (
           <div className="fixed inset-0 flex items-center justify-center pointer-events-none z-50">
             <div className="bg-yellow-400 text-yellow-900 px-12 py-8 rounded-2xl shadow-2xl animate-bounce">
               <h1 className="text-6xl font-bold">BINGO!</h1>
-              <p className="text-2xl text-center mt-2">{bingoCount}列達成！</p>
+              <p className="text-2xl text-center mt-2">{state.bingoCount}列達成！</p>
             </div>
           </div>
         )}
@@ -417,20 +454,20 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
         )}
 
         {/* ゲーム状態表示 */}
-        {session?.status === 'waiting' && (
+        {state.session?.status === 'waiting' && (
           <div className="fixed bottom-4 left-4 bg-blue-600 text-white px-4 py-2 rounded-lg shadow-lg">
             ゲーム開始を待っています...
           </div>
         )}
 
         {/* ゲーム終了モーダル */}
-        {session?.status === 'finished' && (
+        {state.session?.status === 'finished' && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40">
             <div className="bg-white rounded-lg p-8 max-w-md">
               <h2 className="text-3xl font-bold text-gray-800 mb-4">ゲーム終了！</h2>
               <p className="text-lg text-gray-600 mb-6">
                 お疲れ様でした！
-                {bingoCount > 0 && ` ${bingoCount}列のビンゴを達成しました！`}
+                {state.bingoCount > 0 && ` ${state.bingoCount}列のビンゴを達成しました！`}
               </p>
               <button
                 onClick={() => router.push('/')}

@@ -46,8 +46,8 @@ export type SessionStatus = 'waiting' | 'playing' | 'finished' | 'expired';
 // 接続タイプ
 export type ConnectionType = 'socket' | 'pusher';
 
-// イベントハンドラーの汎用型
-export type RealtimeEventHandler = (data: unknown) => void;
+// イベントハンドラーの汎用型（ジェネリック対応）
+export type RealtimeEventHandler<T = unknown> = (data: T) => void;
 
 // チャンネルメンバー情報
 export interface RealtimeMemberInfo {
@@ -66,16 +66,16 @@ export interface UseRealtimeConnectionReturn {
   isConnecting: boolean;
   connectionType: ConnectionType;
   emit: (eventName: string, data: Record<string, unknown>) => void | Promise<void>;
-  on: (eventName: string, callback: RealtimeEventHandler) => void;
-  off: (eventName: string, callback?: RealtimeEventHandler) => void;
+  on: <T = unknown>(eventName: string, callback: RealtimeEventHandler<T>) => void;
+  off: <T = unknown>(eventName: string, callback?: RealtimeEventHandler<T>) => void;
   reconnect: () => void;
   members: Map<string, RealtimeMemberInfo>;
 }
 
 // Pusher接続の戻り値型
 export interface UsePusherConnectionReturn {
-  pusher: PusherClient | null; // Pusherインスタンス（具体的な型を指定）
-  channel: Channel | PresenceChannel | null; // チャンネルインスタンス（具体的な型を指定）
+  pusher: PusherClient | null;
+  channel: Channel | PresenceChannel | null;
   isConnected: boolean;
   isConnecting: boolean;
   members: Map<string, RealtimeMemberInfo>;
@@ -83,8 +83,8 @@ export interface UsePusherConnectionReturn {
   disconnect: () => void;
   reconnect: () => void;
   emit: (eventName: string, data: Record<string, unknown>) => Promise<void>;
-  on: (eventName: string, callback: RealtimeEventHandler) => void;
-  off: (eventName: string, callback?: RealtimeEventHandler) => void;
+  on: <T = unknown>(eventName: string, callback: RealtimeEventHandler<T>) => void;
+  off: <T = unknown>(eventName: string, callback?: RealtimeEventHandler<T>) => void;
 }
 
 // ========================================
@@ -442,4 +442,111 @@ export interface SessionDocument extends Omit<GameSession, 'createdAt' | 'expire
 export interface PlayerDocument extends Omit<Player, 'joinedAt' | 'lastActiveAt'> {
   joinedAt: Date;
   lastActiveAt?: Date;
+}
+// ========================================
+// 番号抽選関連の型定義
+// ========================================
+
+// 番号抽選APIのリクエスト
+export interface DrawNumberRequest {
+  accessToken: string;
+  hostId: string;
+}
+
+// 番号抽選APIのレスポンス
+export interface DrawNumberResponse {
+  success: boolean;
+  number: number;
+  bingoLetter: string;
+  drawnNumbers: number[];
+  message: string;
+  warning?: string;
+}
+
+// 番号抽選状態取得のレスポンス
+export interface DrawStatusResponse {
+  drawnNumbers: number[];
+  currentNumber: number | null;
+  status: SessionStatus;
+  totalDrawn: number;
+}
+
+// ========================================
+// Pusherイベントのペイロード型定義
+// ========================================
+
+// 番号が引かれた時のイベントデータ
+export interface NumberDrawnEventData {
+  number: number;
+  bingoLetter: string;
+  drawnNumbers: number[];
+  drawnAt: string;
+}
+
+// プレイヤーがビンゴした時のイベントデータ
+export interface PlayerBingoEventData {
+  player: Player;
+  bingoCount: number;
+  lines?: string[];
+  achievedAt?: string;
+}
+
+// ゲーム開始時のイベントデータ
+export interface GameStartedEventData {
+  sessionId?: string;
+  startedAt?: string;
+}
+
+// セッション更新時のイベントデータ
+export interface SessionUpdatedEventData {
+  session: GameSession;
+  updateType?: 'player_joined' | 'player_left' | 'status_changed' | 'number_drawn';
+}
+
+// ========================================
+// ビンゴカード関連の型定義
+// ========================================
+
+// ビンゴのセル
+export interface BingoCell {
+  number: number;
+  marked: boolean;
+  isLatest?: boolean;
+}
+
+// ビンゴ判定の結果
+export interface BingoCheckResult {
+  count: number;
+  lines: string[];
+  newBingo: boolean;
+}
+
+// ========================================
+// ゲームページコンポーネントの内部状態型
+// ========================================
+
+// ホストゲーム画面の状態
+export interface HostGameState {
+  session: GameSession | null;
+  drawnNumbers: number[];
+  currentNumber: number | null;
+  remainingNumbers: number[];
+  isLoading: boolean;
+  isDrawing: boolean;
+  error: string | null;
+  isConfirmingEnd: boolean;
+}
+
+// ゲストゲーム画面の状態
+export interface GuestGameState {
+  session: GameSession | null;
+  board: BingoCell[][];
+  currentNumber: number | null;
+  drawnNumbers: number[];
+  bingoLines: string[];
+  bingoCount: number;
+  showBingoAnimation: boolean;
+  loading: boolean;
+  error: string | null;
+  playerName: string;
 }
