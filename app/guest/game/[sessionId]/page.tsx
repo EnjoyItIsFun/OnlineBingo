@@ -1,7 +1,7 @@
 // app/guest/game/[sessionId]/page.tsx
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { usePusherConnection } from '@/hooks/usePusherConnection';
 import {
@@ -258,36 +258,10 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
     };
   }, [resolvedParams, resolvedSearchParams, on, off, emit]);
 
-  // セルをクリックしてマーク/解除（手動調整用）
-  const toggleCell = useCallback((row: number, col: number) => {
-    if (state.board[row][col].number === 0) return; // 中央のフリースペースは変更不可
-
-    setState(prev => {
-      const newBoard = prev.board.map((r, rIdx) =>
-        r.map((cell, cIdx) => {
-          if (rIdx === row && cIdx === col) {
-            return { ...cell, marked: !cell.marked };
-          }
-          return cell;
-        })
-      );
-
-      // ビンゴチェック
-      const { count, lines } = checkBingo(newBoard);
-
-      return {
-        ...prev,
-        board: newBoard,
-        bingoCount: count,
-        bingoLines: lines
-      };
-    });
-  }, [state.board]);
-
   // ローディング画面
   if (state.loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-600 to-blue-600 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-pink-500 via-red-500 to-orange-500 flex items-center justify-center">
         <div className="text-white text-2xl">読み込み中...</div>
       </div>
     );
@@ -296,13 +270,13 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
   // エラー画面
   if (state.error) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-600 to-blue-600 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-pink-500 via-red-500 to-orange-500 flex items-center justify-center">
         <div className="bg-white rounded-lg p-8 max-w-md">
           <h2 className="text-2xl font-bold text-red-600 mb-4">エラー</h2>
           <p className="text-gray-700">{state.error}</p>
           <button
             onClick={() => router.push('/')}
-            className="mt-4 w-full bg-blue-600 text-white rounded-lg py-2 hover:bg-blue-700"
+            className="mt-4 w-full bg-gradient-to-r from-pink-600 to-orange-500 hover:from-pink-700 hover:to-orange-600 text-white rounded-lg py-2"
           >
             トップページに戻る
           </button>
@@ -313,21 +287,25 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
 
   // メインのゲーム画面
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-600 to-blue-600 p-4">
+    <div className="min-h-screen bg-gradient-to-br from-pink-500 via-red-500 to-orange-500 p-4">
       <div className="max-w-6xl mx-auto">
         {/* ヘッダー */}
-        <div className="bg-white rounded-lg shadow-lg p-4 mb-4">
-          <div className="flex justify-between items-center">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-800">{state.session?.gameName}</h1>
-              <p className="text-gray-600">プレイヤー: {state.playerName}</p>
-            </div>
-            <div className="text-right">
-              {state.bingoCount > 0 && (
-                <div className="bg-yellow-400 text-yellow-900 px-4 py-2 rounded-full font-bold">
-                  ビンゴ {state.bingoCount}列達成！
-                </div>
-              )}
+        <div className="w-full overflow-hidden rounded-xl shadow-2xl mb-4">
+          <div className="bg-gradient-to-r from-pink-500/70 to-orange-400/70 p-4 backdrop-blur-sm border-t border-l border-r border-white/20">
+            <div className="flex justify-between items-center">
+              <div>
+                <h1 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-500 drop-shadow-md">
+                  {state.session?.gameName}
+                </h1>
+                <p className="text-white/90 drop-shadow-sm">プレイヤー: {state.playerName}</p>
+              </div>
+              <div className="text-right">
+                {state.bingoCount > 0 && (
+                  <div className="bg-yellow-400 text-yellow-900 px-4 py-2 rounded-full font-bold">
+                    ビンゴ {state.bingoCount}列達成！
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -336,101 +314,129 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
         <div className="grid lg:grid-cols-3 gap-4">
           {/* ビンゴカード */}
           <div className="lg:col-span-2">
-            <div className="bg-white rounded-lg shadow-lg p-6">
-              <div className="mb-4 flex justify-center gap-4">
-                {['B', 'I', 'N', 'G', 'O'].map(letter => (
-                  <div
-                    key={letter}
-                    className="w-16 h-16 bg-purple-600 text-white rounded-lg flex items-center justify-center text-2xl font-bold"
-                  >
-                    {letter}
-                  </div>
-                ))}
+            <div className="w-full overflow-hidden rounded-xl shadow-2xl">
+              <div className="bg-gradient-to-r from-pink-500/70 to-orange-400/70 p-4 backdrop-blur-sm border-t border-l border-r border-white/20">
+                <h2 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-500 drop-shadow-md">
+                  ビンゴカード
+                </h2>
               </div>
-
-              <div className="grid grid-cols-5 gap-2">
-                {state.board.map((row, rowIdx) =>
-                  row.map((cell, colIdx) => (
-                    <button
-                      key={`${rowIdx}-${colIdx}`}
-                      onClick={() => toggleCell(rowIdx, colIdx)}
-                      disabled={cell.number === 0}
-                      className={`
-                        aspect-square rounded-lg font-bold text-xl transition-all transform
-                        ${cell.number === 0 
-                          ? 'bg-yellow-400 text-yellow-900 cursor-default' 
-                          : cell.marked
-                            ? 'bg-purple-600 text-white scale-95 shadow-inner'
-                            : 'bg-gray-100 hover:bg-gray-200 text-gray-800'
-                        }
-                        ${cell.number === state.currentNumber ? 'ring-4 ring-yellow-400 animate-pulse' : ''}
-                      `}
+              
+              <div className="bg-white/30 backdrop-blur-md p-6 border-b border-l border-r border-white/20">
+                <div className="mb-4 flex justify-center gap-4">
+                  {['B', 'I', 'N', 'G', 'O'].map(letter => (
+                    <div
+                      key={letter}
+                      className="w-16 h-16 bg-gradient-to-br from-red-600 to-red-800 text-yellow-300 rounded-lg flex items-center justify-center text-2xl font-bold border border-yellow-400/50 drop-shadow-md"
                     >
-                      {cell.number === 0 ? 'FREE' : cell.number}
-                    </button>
-                  ))
+                      {letter}
+                    </div>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-5 gap-2">
+                  {state.board.map((row, rowIdx) =>
+                    row.map((cell, colIdx) => (
+                      <div
+                        key={`${rowIdx}-${colIdx}`}
+                        className={`
+                          aspect-square rounded-lg font-bold text-xl transition-all flex items-center justify-center shadow-md
+                          ${cell.number === 0 
+                            ? 'bg-gradient-to-br from-yellow-300 to-yellow-500 text-red-700 border-2 border-red-600' 
+                            : cell.marked
+                              ? 'bg-gradient-to-br from-yellow-300 to-yellow-500 text-red-700 border-2 border-red-600'
+                              : 'bg-gradient-to-br from-red-600 to-red-800 text-yellow-300 border border-yellow-400/50'
+                          }
+                          ${cell.number === state.currentNumber ? 'ring-4 ring-yellow-400 animate-pulse' : ''}
+                        `}
+                      >
+                        {cell.number === 0 ? '★' : cell.number}
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {/* ビンゴライン表示 */}
+                {state.bingoLines.length > 0 && (
+                  <div className="mt-4 p-3 bg-yellow-400/30 border-2 border-yellow-400 rounded-lg">
+                    <p className="text-sm font-semibold text-yellow-900">
+                      達成ライン: {state.bingoLines.join(', ')}
+                    </p>
+                  </div>
                 )}
               </div>
-
-              {/* ビンゴライン表示 */}
-              {state.bingoLines.length > 0 && (
-                <div className="mt-4 p-3 bg-yellow-50 border-2 border-yellow-400 rounded-lg">
-                  <p className="text-sm font-semibold text-yellow-900">
-                    達成ライン: {state.bingoLines.join(', ')}
-                  </p>
-                </div>
-              )}
             </div>
           </div>
 
           {/* サイドパネル */}
           <div className="lg:col-span-1">
             {/* 現在の番号 */}
-            <div className="bg-white rounded-lg shadow-lg p-6 mb-4">
-              <h2 className="text-lg font-bold text-gray-800 mb-4">現在の番号</h2>
-              {state.currentNumber ? (
-                <div className="text-center">
-                  <div className="text-4xl font-bold text-purple-600">
-                    {getBingoLetter(state.currentNumber)}-{state.currentNumber}
+            <div className="w-full overflow-hidden rounded-xl shadow-2xl mb-4">
+              <div className="bg-gradient-to-r from-pink-500/70 to-orange-400/70 p-4 backdrop-blur-sm border-t border-l border-r border-white/20">
+                <h2 className="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-500 drop-shadow-md">
+                  現在の番号
+                </h2>
+              </div>
+              
+              <div className="bg-white/30 backdrop-blur-md p-6 border-b border-l border-r border-white/20">
+                {state.currentNumber ? (
+                  <div className="text-center">
+                    <div className="w-32 h-32 mx-auto rounded-full bg-gradient-to-br from-yellow-400 to-yellow-600 border-4 border-red-600 flex items-center justify-center shadow-xl mb-3">
+                      <span className="text-5xl font-bold text-red-700 drop-shadow-md">
+                        {state.currentNumber}
+                      </span>
+                    </div>
+                    <div className="text-lg font-bold text-gray-800">
+                      {getBingoLetter(state.currentNumber)}-{state.currentNumber}
+                    </div>
+                    <div className="text-sm text-gray-700 mt-1">
+                      {state.drawnNumbers.length}個目
+                    </div>
                   </div>
-                  <div className="text-sm text-gray-600 mt-2">
-                    {state.drawnNumbers.length}個目
+                ) : (
+                  <div className="text-center text-gray-500">
+                    まだ番号が引かれていません
                   </div>
-                </div>
-              ) : (
-                <div className="text-center text-gray-400">
-                  まだ番号が引かれていません
-                </div>
-              )}
+                )}
+              </div>
             </div>
 
             {/* 最近の番号 */}
-            <div className="bg-white rounded-lg shadow-lg p-6">
-              <h2 className="text-lg font-bold text-gray-800 mb-4">既出番号（最新10個）</h2>
-              <div className="space-y-2">
-                {state.drawnNumbers.slice(-10).reverse().map((num, idx) => (
-                  <div
-                    key={num}
-                    className={`
-                      flex items-center justify-between p-2 rounded
-                      ${idx === 0 && num === state.currentNumber ? 'bg-yellow-100 border-2 border-yellow-400' : 'bg-gray-50'}
-                    `}
-                  >
-                    <span className="font-semibold">
-                      {getBingoLetter(num)}-{num}
-                    </span>
-                    {idx === 0 && num === state.currentNumber && (
-                      <span className="text-xs bg-yellow-400 text-yellow-900 px-2 py-1 rounded">
-                        最新
+            <div className="w-full overflow-hidden rounded-xl shadow-2xl">
+              <div className="bg-gradient-to-r from-pink-500/70 to-orange-400/70 p-4 backdrop-blur-sm border-t border-l border-r border-white/20">
+                <h2 className="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-500 drop-shadow-md">
+                  既出番号（最新10個）
+                </h2>
+              </div>
+              
+              <div className="bg-white/30 backdrop-blur-md p-4 border-b border-l border-r border-white/20">
+                <div className="space-y-2">
+                  {state.drawnNumbers.slice(-10).reverse().map((num, idx) => (
+                    <div
+                      key={num}
+                      className={`
+                        flex items-center justify-between p-2 rounded transition-all
+                        ${idx === 0 && num === state.currentNumber 
+                          ? 'bg-yellow-400/50 border-2 border-yellow-400' 
+                          : 'bg-white/40'
+                        }
+                      `}
+                    >
+                      <span className="font-semibold text-gray-800">
+                        {getBingoLetter(num)}-{num}
                       </span>
-                    )}
-                  </div>
-                ))}
-                {state.drawnNumbers.length === 0 && (
-                  <p className="text-gray-400 text-center">
-                    まだ番号が引かれていません
-                  </p>
-                )}
+                      {idx === 0 && num === state.currentNumber && (
+                        <span className="text-xs bg-yellow-400 text-yellow-900 px-2 py-1 rounded font-bold">
+                          最新
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                  {state.drawnNumbers.length === 0 && (
+                    <p className="text-gray-500 text-center text-sm">
+                      まだ番号が引かれていません
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -471,7 +477,7 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
               </p>
               <button
                 onClick={() => router.push('/')}
-                className="w-full bg-purple-600 text-white rounded-lg py-3 text-lg font-bold hover:bg-purple-700"
+                className="w-full bg-gradient-to-r from-pink-600 to-orange-500 hover:from-pink-700 hover:to-orange-600 text-white rounded-lg py-3 text-lg font-bold"
               >
                 トップページへ戻る
               </button>
