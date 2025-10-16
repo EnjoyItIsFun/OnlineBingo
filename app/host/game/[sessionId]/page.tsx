@@ -25,9 +25,9 @@ import {
   Timer,
   Play,
   RefreshCw,
-  Crown,
   AlertCircle,
-  XCircle
+  XCircle,
+  Home
 } from 'lucide-react';
 
 // 番号履歴表示コンポーネント
@@ -50,19 +50,19 @@ const NumberHistory: React.FC<NumberHistoryProps> = ({ numbers }) => {
     <div className="space-y-2">
       {Object.entries(categorizedNumbers).map(([letter, nums]) => (
         <div key={letter} className="flex items-center gap-2">
-          <span className="text-yellow-300 font-bold w-6">{letter}:</span>
+          <span className="text-red-700 font-bold w-6">{letter}:</span>
           <div className="flex flex-wrap gap-1">
             {nums.length > 0 ? (
               nums.map(num => (
                 <span
                   key={num}
-                  className="bg-white/30 text-white text-xs px-2 py-1 rounded border border-white/40"
+                  className="bg-red-600 text-yellow-300 text-xs px-2 py-1 rounded border border-yellow-400/50"
                 >
                   {num}
                 </span>
               ))
             ) : (
-              <span className="text-white/50 text-xs">-</span>
+              <span className="text-gray-500 text-xs">-</span>
             )}
           </div>
         </div>
@@ -79,7 +79,7 @@ interface PlayerCardProps {
 
 const PlayerCard: React.FC<PlayerCardProps> = ({ player, rank }) => {
   return (
-    <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3 border border-white/30">
+    <div className="bg-white/50 backdrop-blur-sm rounded-lg p-3 border border-white/40">
       <div className="flex items-center justify-between">
         <div className="flex items-center">
           {rank && rank <= 3 && (
@@ -96,14 +96,14 @@ const PlayerCard: React.FC<PlayerCardProps> = ({ player, rank }) => {
             {player.name.charAt(0).toUpperCase()}
           </div>
           <div className="ml-3">
-            <p className="font-semibold text-white drop-shadow-sm">{player.name}</p>
-            <p className="text-xs text-white/70">
+            <p className="font-semibold text-gray-800">{player.name}</p>
+            <p className="text-xs text-gray-600">
               ビンゴ: {player.bingoCount || 0}回
             </p>
           </div>
         </div>
         {player.bingoCount > 0 && (
-          <Trophy className="w-5 h-5 text-yellow-300" />
+          <Trophy className="w-5 h-5 text-yellow-600" />
         )}
       </div>
     </div>
@@ -327,7 +327,7 @@ const GamePageContent: React.FC = () => {
 
     try {
       await emit('cancel_session', { sessionId });
-      router.push('/host');
+      router.push('/');
     } catch (err) {
       setState(prev => ({
         ...prev,
@@ -360,10 +360,10 @@ const GamePageContent: React.FC = () => {
             </h2>
             <p className="text-white/90 text-center mb-4">{state.error}</p>
             <button
-              onClick={() => router.push('/host')}
+              onClick={() => router.push('/')}
               className="w-full bg-gradient-to-r from-pink-600 to-orange-500 hover:from-pink-700 hover:to-orange-600 text-white font-bold py-3 rounded-lg shadow-lg transform transition hover:scale-105"
             >
-              ホスト画面に戻る
+              トップページに戻る
             </button>
           </div>
         </div>
@@ -378,13 +378,11 @@ const GamePageContent: React.FC = () => {
       <div className="max-w-6xl mx-auto">
         {/* ヘッダー */}
         <div className="text-center mb-8">
-          <div className="flex items-center justify-center mb-4">
-            <Crown className="w-10 h-10 text-yellow-300 mr-3" />
-            <h1 className="text-4xl font-bold text-white drop-shadow-lg">
-              {state.session.gameName}
-            </h1>
-            <Sparkles className="w-10 h-10 text-yellow-300 ml-3" />
-          </div>
+          <h1 className="text-4xl font-bold text-white mb-2 drop-shadow-lg flex items-center justify-center">
+            <Sparkles className="w-8 h-8 text-yellow-300 mr-2" />
+            {state.session.gameName}
+            <Sparkles className="w-8 h-8 text-yellow-300 ml-2" />
+          </h1>
           <p className="text-white/90 text-lg">
             セッションID: <span className="font-mono bg-white/20 px-3 py-1 rounded-lg">{sessionId}</span>
           </p>
@@ -394,96 +392,110 @@ const GamePageContent: React.FC = () => {
           {/* 左側：ゲーム操作 */}
           <div className="lg:col-span-2 space-y-6">
             {/* 現在の番号表示 */}
-            <div className="bg-white/30 backdrop-blur-md rounded-xl shadow-2xl p-6 border border-white/20">
-              <h2 className="text-2xl font-bold text-white text-center mb-4 drop-shadow-md">
-                現在の番号
-              </h2>
-              <div className="flex justify-center mb-6">
-                <div className="w-32 h-32 rounded-full bg-gradient-to-br from-yellow-400 to-yellow-600 border-4 border-red-600 flex items-center justify-center shadow-xl">
-                  <span className="text-5xl font-bold text-red-700 drop-shadow-md">
-                    {state.currentNumber || '-'}
-                  </span>
-                </div>
+            <div className="w-full overflow-hidden rounded-xl shadow-2xl">
+              <div className="bg-gradient-to-r from-pink-500/70 to-orange-400/70 p-4 backdrop-blur-sm border-t border-l border-r border-white/20">
+                <h2 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-500 drop-shadow-md">
+                  現在の番号
+                </h2>
               </div>
-
-              {/* エラー表示 */}
-              {state.error && (
-                <div className="mb-4 p-3 bg-red-500/30 border border-red-400 rounded-lg">
-                  <p className="text-white text-sm text-center">{state.error}</p>
+              
+              <div className="bg-white/30 backdrop-blur-md p-6 border-b border-l border-r border-white/20">
+                <div className="flex justify-center mb-6">
+                  <div className="w-32 h-32 rounded-full bg-gradient-to-br from-yellow-400 to-yellow-600 border-4 border-red-600 flex items-center justify-center shadow-xl">
+                    <span className="text-5xl font-bold text-red-700 drop-shadow-md">
+                      {state.currentNumber || '-'}
+                    </span>
+                  </div>
                 </div>
-              )}
 
-              {/* 既出番号 */}
-              {state.drawnNumbers.length > 0 && (
-                <div className="mt-6 bg-white/20 rounded-lg p-4">
-                  <h3 className="text-white font-bold text-center mb-3 drop-shadow-sm">
-                    既出番号 ({state.drawnNumbers.length}/75)
-                  </h3>
-                  <NumberHistory numbers={state.drawnNumbers} />
-                </div>
-              )}
-
-              {/* ステータス */}
-              <div className="mt-6 grid grid-cols-2 gap-4">
-                <div className="bg-white/20 rounded-lg p-3 text-center">
-                  <p className="text-2xl font-bold text-white drop-shadow-sm">{state.drawnNumbers.length}</p>
-                  <p className="text-sm text-white/80">抽選済み</p>
-                </div>
-                <div className="bg-white/20 rounded-lg p-3 text-center">
-                  <p className="text-2xl font-bold text-white drop-shadow-sm">{state.remainingNumbers.length}</p>
-                  <p className="text-sm text-white/80">残り</p>
-                </div>
-              </div>
-
-              {/* 操作ボタン */}
-              <div className="mt-6 space-y-3">
-                {state.session.status === 'waiting' ? (
-                  <button
-                    onClick={handleStartGame}
-                    className="w-full bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-bold py-4 rounded-lg shadow-lg transform transition hover:scale-105 flex items-center justify-center"
-                  >
-                    <Play className="w-5 h-5 mr-2" />
-                    ゲーム開始
-                  </button>
-                ) : (
-                  <>
-                    <button
-                      onClick={handleDrawNumber}
-                      disabled={state.remainingNumbers.length === 0 || state.isDrawing}
-                      className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 text-red-800 font-bold py-4 rounded-lg shadow-lg transform transition hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-                    >
-                      {state.isDrawing ? (
-                        <>
-                          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-red-800 mr-2" />
-                          抽選中...
-                        </>
-                      ) : (
-                        '番号を引く'
-                      )}
-                    </button>
-                    <button
-                      onClick={handleResetGame}
-                      className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold py-3 rounded-lg shadow-lg flex items-center justify-center"
-                    >
-                      <RefreshCw className="w-5 h-5 mr-2" />
-                      ゲームリセット
-                    </button>
-                  </>
+                {/* エラー表示 */}
+                {state.error && (
+                  <div className="mb-4 p-3 bg-red-500/30 border border-red-400 rounded-lg">
+                    <p className="text-white text-sm text-center">{state.error}</p>
+                  </div>
                 )}
-                
-                {/* ゲーム終了ボタン */}
-                <button
-                  onClick={handleEndGame}
-                  className={`w-full py-3 rounded-lg font-bold shadow-lg flex items-center justify-center transition-all
-                    ${state.isConfirmingEnd 
-                      ? 'bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white animate-pulse' 
-                      : 'bg-white/20 backdrop-blur-sm text-white hover:bg-white/30 border border-white/30'}`}
-                >
-                  <XCircle className="w-5 h-5 mr-2" />
-                  {state.isConfirmingEnd 
-                    ? '本当にゲームを終了しますか？' 
-                    : 'ゲームを終了'}
-                </button>
+
+                {/* 既出番号 */}
+                {state.drawnNumbers.length > 0 && (
+                  <div className="mt-6 bg-white/40 rounded-lg p-4">
+                    <h3 className="text-gray-800 font-bold text-center mb-3">
+                      既出番号 ({state.drawnNumbers.length}/75)
+                    </h3>
+                    <NumberHistory numbers={state.drawnNumbers} />
+                  </div>
+                )}
+
+                {/* ステータス */}
+                <div className="mt-6 grid grid-cols-2 gap-4">
+                  <div className="bg-white/40 rounded-lg p-3 text-center">
+                    <p className="text-2xl font-bold text-gray-800">{state.drawnNumbers.length}</p>
+                    <p className="text-sm text-gray-600">抽選済み</p>
+                  </div>
+                  <div className="bg-white/40 rounded-lg p-3 text-center">
+                    <p className="text-2xl font-bold text-gray-800">{state.remainingNumbers.length}</p>
+                    <p className="text-sm text-gray-600">残り</p>
+                  </div>
+                </div>
+
+                {/* 操作ボタン */}
+                <div className="mt-6 space-y-3">
+                  {state.session.status === 'waiting' ? (
+                    <button
+                      onClick={handleStartGame}
+                      className="w-full bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-bold py-4 rounded-lg shadow-lg transform transition hover:scale-105 flex items-center justify-center"
+                    >
+                      <Play className="w-5 h-5 mr-2" />
+                      ゲーム開始
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        onClick={handleDrawNumber}
+                        disabled={state.remainingNumbers.length === 0 || state.isDrawing}
+                        className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 text-red-800 font-bold py-4 rounded-lg shadow-lg transform transition hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                      >
+                        {state.isDrawing ? (
+                          <>
+                            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-red-800 mr-2" />
+                            抽選中...
+                          </>
+                        ) : (
+                          '番号を引く'
+                        )}
+                      </button>
+                      <button
+                        onClick={handleResetGame}
+                        className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold py-3 rounded-lg shadow-lg flex items-center justify-center"
+                      >
+                        <RefreshCw className="w-5 h-5 mr-2" />
+                        ゲームリセット
+                      </button>
+                    </>
+                  )}
+                  
+                  {/* ゲーム終了ボタン */}
+                  <button
+                    onClick={handleEndGame}
+                    className={`w-full py-3 rounded-lg font-bold shadow-lg flex items-center justify-center transition-all
+                      ${state.isConfirmingEnd 
+                        ? 'bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white animate-pulse' 
+                        : 'bg-white/40 backdrop-blur-sm text-gray-800 hover:bg-white/50 border border-white/60'}`}
+                  >
+                    <XCircle className="w-5 h-5 mr-2" />
+                    {state.isConfirmingEnd 
+                      ? '本当にゲームを終了しますか？' 
+                      : 'ゲームを終了'}
+                  </button>
+
+                  {/* トップページへ戻るボタン */}
+                  <button
+                    onClick={() => router.push('/')}
+                    className="w-full bg-white/20 backdrop-blur-sm text-white hover:bg-white/30 font-medium py-3 rounded-lg transition border border-white/40 flex items-center justify-center"
+                  >
+                    <Home className="w-5 h-5 mr-2" />
+                    トップページへ戻る
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -491,41 +503,54 @@ const GamePageContent: React.FC = () => {
           {/* 右側：参加者情報 */}
           <div className="space-y-6">
             {/* ゲーム情報 */}
-            <div className="bg-white/30 backdrop-blur-md rounded-xl shadow-2xl p-4 border border-white/20">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center">
-                  <Timer className="w-5 h-5 text-yellow-300 mr-2" />
-                  <span className="text-white font-semibold">残り時間</span>
-                </div>
-                <span className="text-xl font-bold text-white drop-shadow-sm">{formattedTime}</span>
+            <div className="w-full overflow-hidden rounded-xl shadow-2xl">
+              <div className="bg-gradient-to-r from-pink-500/70 to-orange-400/70 p-4 backdrop-blur-sm border-t border-l border-r border-white/20">
+                <h2 className="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-500 drop-shadow-md">
+                  ゲーム情報
+                </h2>
               </div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center">
-                  <Users className="w-5 h-5 text-yellow-300 mr-2" />
-                  <span className="text-white font-semibold">参加者</span>
+              
+              <div className="bg-white/30 backdrop-blur-md p-4 border-b border-l border-r border-white/20">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center">
+                    <Timer className="w-5 h-5 text-red-600 mr-2" />
+                    <span className="text-gray-800 font-semibold">残り時間</span>
+                  </div>
+                  <span className="text-xl font-bold text-gray-800">{formattedTime}</span>
                 </div>
-                <span className="text-xl font-bold text-white drop-shadow-sm">
-                  {state.session.players.length}/{state.session.maxPlayers}
-                </span>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center">
+                    <Users className="w-5 h-5 text-red-600 mr-2" />
+                    <span className="text-gray-800 font-semibold">参加者</span>
+                  </div>
+                  <span className="text-xl font-bold text-gray-800">
+                    {state.session.players.length}/{state.session.maxPlayers}
+                  </span>
+                </div>
               </div>
             </div>
 
             {/* 参加者リスト */}
-            <div className="bg-white/30 backdrop-blur-md rounded-xl shadow-2xl p-4 border border-white/20">
-              <h3 className="text-lg font-bold text-white mb-3 drop-shadow-md flex items-center">
-                <Trophy className="w-5 h-5 text-yellow-300 mr-2" />
-                参加者ランキング
-              </h3>
-              <div className="space-y-2 max-h-96 overflow-y-auto">
-                {state.session.players
-                  .sort((a, b) => (b.bingoCount || 0) - (a.bingoCount || 0))
-                  .map((player, index) => (
-                    <PlayerCard
-                      key={player.id}
-                      player={player}
-                      rank={player.bingoCount > 0 ? index + 1 : undefined}
-                    />
-                  ))}
+            <div className="w-full overflow-hidden rounded-xl shadow-2xl">
+              <div className="bg-gradient-to-r from-pink-500/70 to-orange-400/70 p-4 backdrop-blur-sm border-t border-l border-r border-white/20">
+                <h3 className="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-500 drop-shadow-md flex items-center">
+                  <Trophy className="w-5 h-5 mr-2" />
+                  参加者ランキング
+                </h3>
+              </div>
+              
+              <div className="bg-white/30 backdrop-blur-md p-4 border-b border-l border-r border-white/20">
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {state.session.players
+                    .sort((a, b) => (b.bingoCount || 0) - (a.bingoCount || 0))
+                    .map((player, index) => (
+                      <PlayerCard
+                        key={player.id}
+                        player={player}
+                        rank={player.bingoCount > 0 ? index + 1 : undefined}
+                      />
+                    ))}
+                </div>
               </div>
             </div>
           </div>
