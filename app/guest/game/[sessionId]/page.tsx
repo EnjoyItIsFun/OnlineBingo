@@ -1,4 +1,4 @@
-// app/guest/game/[sessionId]/page.tsx
+// app/guest/game/[sessionId]/page.tsx - TypeScriptエラー修正版
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -7,11 +7,9 @@ import { usePusherConnection } from '@/hooks/usePusherConnection';
 import {
   BingoCell,
   Player,
-  GameSession,
   GuestGameState,
   BingoCheckResult,
   NumberDrawnEventData,
-  GameStartedEventData,
   SessionUpdatedEventData
 } from '@/types';
 
@@ -87,7 +85,7 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
   const [resolvedSearchParams, setResolvedSearchParams] = useState<{ playerId?: string; token?: string } | null>(null);
 
   // Pusher接続
-  const { isConnected, on, off } = usePusherConnection(resolvedParams?.sessionId || null);
+  const { isConnected, on, off, emit } = usePusherConnection(resolvedParams?.sessionId || null);
 
   // PromiseのparamsとsearchParamsを解決
   useEffect(() => {
@@ -96,18 +94,6 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
       setResolvedSearchParams(sp);
     });
   }, [params, searchParams]);
-
-  // reconnectionDataをlocalStorageに保存
-  useEffect(() => {
-    if (resolvedParams?.sessionId && resolvedSearchParams?.token && resolvedSearchParams?.playerId) {
-      localStorage.setItem('reconnectionData', JSON.stringify({
-        sessionId: resolvedParams.sessionId,
-        accessToken: resolvedSearchParams.token,
-        playerId: resolvedSearchParams.playerId,
-        role: 'player'
-      }));
-    }
-  }, [resolvedParams, resolvedSearchParams]);
 
   // セッション情報とプレイヤー情報の取得
   useEffect(() => {
@@ -123,48 +109,44 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
         });
 
         if (!sessionRes.ok) {
-          throw new Error('セッション情報の取得に失敗しました');
+          throw new Error('セッションの取得に失敗しました');
         }
 
-        const sessionData: GameSession = await sessionRes.json();
-        
-        // プレイヤー情報から自分のボードを取得
-        const player = sessionData.players.find(
-          (p: Player) => p.id === resolvedSearchParams.playerId
-        );
+        const sessionData = await sessionRes.json();
+        const currentPlayer = sessionData.players.find((p: Player) => p.id === resolvedSearchParams.playerId);
 
-        if (!player) {
-          throw new Error('プレイヤー情報が見つかりません');
+        if (currentPlayer && currentPlayer.board) {
+          // ボードを2次元配列のBingoCell形式に変換
+          const initialBoard: BingoCell[][] = currentPlayer.board.map((row: number[]) =>
+            row.map((num: number) => ({
+              number: num,
+              marked: num === 0 || sessionData.drawnNumbers?.includes(num)
+            }))
+          );
+
+          setState(prev => ({
+            ...prev,
+            session: sessionData,
+            board: initialBoard,
+            playerName: currentPlayer.name,
+            drawnNumbers: sessionData.drawnNumbers || [],
+            currentNumber: sessionData.currentNumber,
+            loading: false
+          }));
+
+          // 初回のビンゴチェック
+          const result = checkBingo(initialBoard);
+          setState(prev => ({
+            ...prev,
+            bingoLines: result.lines,
+            bingoCount: result.count
+          }));
         }
-
-        // ボードを初期化（マーク状態を含む）
-        const initialBoard: BingoCell[][] = player.board.map((row: number[]) =>
-          row.map((num: number) => ({
-            number: num,
-            marked: num === 0 || (sessionData.numbers || []).includes(num)
-          }))
-        );
-        
-        // 初期ビンゴチェック
-        const { count, lines } = checkBingo(initialBoard);
-
-        setState({
-          session: sessionData,
-          board: initialBoard,
-          currentNumber: sessionData.currentNumber,
-          drawnNumbers: sessionData.numbers || [],
-          bingoLines: lines,
-          bingoCount: count,
-          showBingoAnimation: false,
-          loading: false,
-          error: null,
-          playerName: player.name
-        });
-
-      } catch (err) {
+      } catch (error) {
+        console.error('データ取得エラー:', error);
         setState(prev => ({
           ...prev,
-          error: err instanceof Error ? err.message : '予期しないエラーが発生しました',
+          error: error instanceof Error ? error.message : 'エラーが発生しました',
           loading: false
         }));
       }
@@ -175,357 +157,219 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
 
   // Pusherイベントリスナー
   useEffect(() => {
-  if (!resolvedParams || !resolvedSearchParams) return;
+    if (!isConnected) return;
 
-  // ゲーム開始
-  const handleGameStarted = () => {
-    setState(prev => ({
-      ...prev,
-      session: prev.session ? { ...prev.session, status: 'playing' } : null
-    }));
-  };
-
-  // 番号が引かれた
-  const handleNumberDrawn = (data: NumberDrawnEventData) => {
-    setState(prev => {
-      const newBoard = prev.board.map(row =>
-        row.map(cell => ({
-          ...cell,
-          marked: cell.marked || cell.number === data.number
-        }))
-      );
-
-      // ビンゴチェック
-      const { count, lines } = checkBingo(newBoard);
+    const handleNumberDrawn = (data: NumberDrawnEventData) => {
+      console.log('番号が引かれました:', data);
       
-      // 新しいビンゴが達成された場合
-      const newBingo = count > prev.bingoCount;
-      
-      if (newBingo && resolvedSearchParams?.playerId) {
-        // APIルート経由でビンゴ達成を通知
-        fetch('/api/pusher/trigger', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            sessionId: resolvedParams.sessionId,
-            accessToken: resolvedSearchParams.token,
+      setState(prev => {
+        const newBoard = prev.board.map(row =>
+          row.map(cell => ({
+            ...cell,
+            marked: cell.marked || cell.number === data.number
+          }))
+        );
+
+        const bingoResult = checkBingo(newBoard);
+        const newBingo = bingoResult.count > prev.bingoCount;
+
+        // ビンゴ達成時の処理
+        if (newBingo && resolvedSearchParams?.playerId) {
+          emit('bingo_achieved', {
+            sessionId: resolvedParams?.sessionId || '',
             playerId: resolvedSearchParams.playerId,
-            eventName: 'bingo_achieved',
-            data: {
-              bingoCount: count,
-              lines
-            }
-          })
-        }).catch(err => console.error('Failed to notify bingo:', err));
+            bingoCount: bingoResult.count,
+            lines: bingoResult.lines
+          });
+        }
 
-        // アニメーションを3秒後に非表示
-        setTimeout(() => {
-          setState(s => ({ ...s, showBingoAnimation: false }));
-        }, 3000);
-      }
+        return {
+          ...prev,
+          board: newBoard,
+          currentNumber: data.number,
+          drawnNumbers: [...prev.drawnNumbers, data.number],
+          bingoLines: bingoResult.lines,
+          bingoCount: bingoResult.count,
+          showBingoAnimation: newBingo
+        };
+      });
+    };
 
-      return {
-        ...prev,
-        currentNumber: data.number,
-        drawnNumbers: data.drawnNumbers || [],
-        board: newBoard,
-        bingoCount: count,
-        bingoLines: lines,
-        showBingoAnimation: newBingo
-      };
-    });
-  };
-
-  // セッション更新
-  const handleSessionUpdated = (data: SessionUpdatedEventData) => {
-    setState(prev => ({
-      ...prev,
-      session: data.session,
-      drawnNumbers: data.session.numbers || prev.drawnNumbers
-    }));
-  };
-
-  // ゲームリセット（新規追加）
-  const handleGameReset = (data: { sessionId: string; session: GameSession }) => {
-    // プレイヤー情報から新しいボードを取得
-    const player = data.session.players.find(
-      p => p.id === resolvedSearchParams?.playerId
-    );
-    
-    if (player) {
-      const newBoard: BingoCell[][] = player.board.map(row =>
-        row.map(num => ({
-          number: num,
-          marked: num === 0  // 中央のフリースペースのみマーク
-        }))
-      );
-      
+    const handleGameReset = () => {
+      console.log('ゲームがリセットされました');
       setState(prev => ({
         ...prev,
-        session: data.session,
-        board: newBoard,
+        board: prev.board.map(row =>
+          row.map(cell => ({
+            ...cell,
+            marked: cell.number === 0
+          }))
+        ),
         currentNumber: null,
         drawnNumbers: [],
         bingoLines: [],
         bingoCount: 0,
-        showBingoAnimation: false,
-        error: null
+        showBingoAnimation: false
       }));
+    };
+
+    const handleSessionUpdated = (data: SessionUpdatedEventData) => {
+      console.log('セッションが更新されました:', data);
+      setState(prev => ({
+        ...prev,
+        session: data.session
+      }));
+    };
+
+    const handleGameEnded = () => {
+      console.log('ゲームが終了しました');
+      router.push(`/guest/result/${resolvedParams?.sessionId}`);
+    };
+
+    // イベントリスナー登録
+    on('number-drawn', handleNumberDrawn);
+    on('game-reset', handleGameReset);
+    on('session-updated', handleSessionUpdated);
+    on('game-ended', handleGameEnded);
+
+    return () => {
+      off('number-drawn', handleNumberDrawn);
+      off('game-reset', handleGameReset);
+      off('session-updated', handleSessionUpdated);
+      off('game-ended', handleGameEnded);
+    };
+  }, [isConnected, on, off, emit, router, resolvedParams, resolvedSearchParams]);
+
+  // ビンゴアニメーション制御
+  useEffect(() => {
+    if (state.showBingoAnimation) {
+      const timer = setTimeout(() => {
+        setState(prev => ({ ...prev, showBingoAnimation: false }));
+      }, 3000);
+      return () => clearTimeout(timer);
     }
-  };
+  }, [state.showBingoAnimation]);
 
-  // ゲーム終了
-  const handleGameEnded = () => {
-    setState(prev => ({
-      ...prev,
-      session: prev.session ? { ...prev.session, status: 'finished' } : null
-    }));
-  };
-
-  // イベントリスナー登録（Pusher形式のイベント名に修正）
-  on<GameStartedEventData>('game-started', handleGameStarted);
-on<NumberDrawnEventData>('number-drawn', handleNumberDrawn);
-on<SessionUpdatedEventData>('session-updated', handleSessionUpdated);
-on<{ sessionId: string; session: GameSession }>('game-reset', handleGameReset);
-on('game-ended', handleGameEnded); 
-
-return () => {
-  off<GameStartedEventData>('game-started', handleGameStarted);
-  off<NumberDrawnEventData>('number-drawn', handleNumberDrawn);
-  off<SessionUpdatedEventData>('session-updated', handleSessionUpdated);
-  off<{ sessionId: string; session: GameSession }>('game-reset', handleGameReset);
-  off('game-ended', handleGameEnded);
-};
-}, [resolvedParams, resolvedSearchParams, on, off]);
-
-  // ローディング画面
   if (state.loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-pink-500 via-red-500 to-orange-500 flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-600 to-pink-600">
         <div className="text-white text-2xl">読み込み中...</div>
       </div>
     );
   }
 
-  // エラー画面
   if (state.error) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-pink-500 via-red-500 to-orange-500 flex items-center justify-center">
-        <div className="bg-white rounded-lg p-8 max-w-md">
-          <h2 className="text-2xl font-bold text-red-600 mb-4">エラー</h2>
-          <p className="text-gray-700">{state.error}</p>
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-600 to-pink-600">
+        <div className="bg-white rounded-lg p-8">
+          <p className="text-red-600 text-xl mb-4">エラー: {state.error}</p>
           <button
-            onClick={() => router.push('/')}
-            className="mt-4 w-full bg-gradient-to-r from-pink-600 to-orange-500 hover:from-pink-700 hover:to-orange-600 text-white rounded-lg py-2"
+            onClick={() => router.push('/guest')}
+            className="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
           >
-            トップページに戻る
+            トップへ戻る
           </button>
         </div>
       </div>
     );
   }
 
-  // メインのゲーム画面
   return (
-    <div className="min-h-screen bg-gradient-to-br from-pink-500 via-red-500 to-orange-500 p-4">
-      <div className="max-w-6xl mx-auto">
+    <div className="min-h-screen bg-gradient-to-br from-purple-600 to-pink-600 p-4">
+      {/* ビンゴアニメーション */}
+      {state.showBingoAnimation && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 animate-fade-in">
+          <div className="bg-white rounded-2xl p-12 animate-bounce-in">
+            <h2 className="text-6xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-pink-600 animate-pulse">
+              BINGO!!
+            </h2>
+            <p className="text-2xl text-gray-700 mt-4 text-center">{state.bingoCount}ライン達成！</p>
+          </div>
+        </div>
+      )}
+
+      <div className="max-w-4xl mx-auto">
         {/* ヘッダー */}
-        <div className="w-full overflow-hidden rounded-xl shadow-2xl mb-4">
-          <div className="bg-gradient-to-r from-pink-500/70 to-orange-400/70 p-4 backdrop-blur-sm border-t border-l border-r border-white/20">
-            <div className="flex justify-between items-center">
-              <div>
-                <h1 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-500 drop-shadow-md">
-                  {state.session?.gameName}
-                </h1>
-                <p className="text-white/90 drop-shadow-sm">プレイヤー: {state.playerName}</p>
-              </div>
-              <div className="text-right">
-                {state.bingoCount > 0 && (
-                  <div className="bg-yellow-400 text-yellow-900 px-4 py-2 rounded-full font-bold">
-                    ビンゴ {state.bingoCount}列達成！
-                  </div>
-                )}
-              </div>
+        <div className="bg-white rounded-lg shadow-xl p-6 mb-6">
+          <h1 className="text-3xl font-bold text-gray-800 mb-2">
+            {state.session?.gameName || 'ビンゴゲーム'}
+          </h1>
+          <div className="flex justify-between items-center">
+            <p className="text-lg text-gray-600">プレイヤー: {state.playerName}</p>
+            <div className="text-right">
+              <p className="text-sm text-gray-500">接続状態: {isConnected ? '✅ 接続中' : '❌ 切断'}</p>
+              {state.bingoCount > 0 && (
+                <p className="text-lg font-bold text-purple-600">
+                  {state.bingoCount}ビンゴ達成！
+                </p>
+              )}
             </div>
           </div>
         </div>
 
-        {/* メインコンテンツ */}
-        <div className="grid lg:grid-cols-3 gap-4">
-          {/* ビンゴカード */}
-          <div className="lg:col-span-2">
-            <div className="w-full overflow-hidden rounded-xl shadow-2xl">
-              <div className="bg-gradient-to-r from-pink-500/70 to-orange-400/70 p-4 backdrop-blur-sm border-t border-l border-r border-white/20">
-                <h2 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-500 drop-shadow-md">
-                  ビンゴカード
-                </h2>
-              </div>
-              
-              <div className="bg-white/30 backdrop-blur-md p-6 border-b border-l border-r border-white/20">
-                <div className="mb-4 flex justify-center gap-4">
-                  {['B', 'I', 'N', 'G', 'O'].map(letter => (
-                    <div
-                      key={letter}
-                      className="w-16 h-16 bg-gradient-to-br from-red-600 to-red-800 text-yellow-300 rounded-lg flex items-center justify-center text-2xl font-bold border border-yellow-400/50 drop-shadow-md"
-                    >
-                      {letter}
-                    </div>
-                  ))}
-                </div>
+        {/* 現在の番号表示 */}
+        {state.currentNumber && (
+          <div className="bg-yellow-400 rounded-lg shadow-xl p-6 mb-6 animate-slide-in">
+            <p className="text-center text-gray-800 text-lg mb-2">現在の番号</p>
+            <p className="text-center text-6xl font-bold text-gray-900">
+              {getBingoLetter(state.currentNumber)}-{state.currentNumber}
+            </p>
+          </div>
+        )}
 
-                <div className="grid grid-cols-5 gap-2">
-                  {state.board.map((row, rowIdx) =>
-                    row.map((cell, colIdx) => (
-                      <div
-                        key={`${rowIdx}-${colIdx}`}
-                        className={`
-                          aspect-square rounded-lg font-bold text-xl transition-all flex items-center justify-center shadow-md
-                          ${cell.number === 0 
-                            ? 'bg-gradient-to-br from-yellow-300 to-yellow-500 text-red-700 border-2 border-red-600' 
-                            : cell.marked
-                              ? 'bg-gradient-to-br from-yellow-300 to-yellow-500 text-red-700 border-2 border-red-600'
-                              : 'bg-gradient-to-br from-red-600 to-red-800 text-yellow-300 border border-yellow-400/50'
-                          }
-                          ${cell.number === state.currentNumber ? 'ring-4 ring-yellow-400 animate-pulse' : ''}
-                        `}
-                      >
-                        {cell.number === 0 ? '★' : cell.number}
+        {/* ビンゴカード */}
+        <div className="bg-white rounded-lg shadow-xl p-6 mb-6">
+          <table className="w-full">
+            <thead>
+              <tr>
+                {['B', 'I', 'N', 'G', 'O'].map(letter => (
+                  <th key={letter} className="text-2xl font-bold text-purple-600 p-2">
+                    {letter}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {state.board.map((row, rowIndex) => (
+                <tr key={rowIndex}>
+                  {row.map((cell, colIndex) => (
+                    <td key={colIndex} className="p-2">
+                      <div className={`
+                        aspect-square flex items-center justify-center text-xl font-bold rounded-lg transition-all
+                        ${cell.marked ? 'bg-purple-600 text-white scale-95' : 'bg-gray-100 text-gray-800'}
+                        ${cell.number === 0 ? 'bg-yellow-400 text-gray-800' : ''}
+                        hover:scale-105
+                      `}>
+                        {cell.number === 0 ? 'FREE' : cell.number}
                       </div>
-                    ))
-                  )}
-                </div>
-
-                {/* ビンゴライン表示 */}
-                {state.bingoLines.length > 0 && (
-                  <div className="mt-4 p-3 bg-yellow-400/30 border-2 border-yellow-400 rounded-lg">
-                    <p className="text-sm font-semibold text-yellow-900">
-                      達成ライン: {state.bingoLines.join(', ')}
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* サイドパネル */}
-          <div className="lg:col-span-1">
-            {/* 現在の番号 */}
-            <div className="w-full overflow-hidden rounded-xl shadow-2xl mb-4">
-              <div className="bg-gradient-to-r from-pink-500/70 to-orange-400/70 p-4 backdrop-blur-sm border-t border-l border-r border-white/20">
-                <h2 className="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-500 drop-shadow-md">
-                  現在の番号
-                </h2>
-              </div>
-              
-              <div className="bg-white/30 backdrop-blur-md p-6 border-b border-l border-r border-white/20">
-                {state.currentNumber ? (
-                  <div className="text-center">
-                    <div className="w-32 h-32 mx-auto rounded-full bg-gradient-to-br from-yellow-400 to-yellow-600 border-4 border-red-600 flex items-center justify-center shadow-xl mb-3">
-                      <span className="text-5xl font-bold text-red-700 drop-shadow-md">
-                        {state.currentNumber}
-                      </span>
-                    </div>
-                    <div className="text-lg font-bold text-gray-800">
-                      {getBingoLetter(state.currentNumber)}-{state.currentNumber}
-                    </div>
-                    <div className="text-sm text-gray-700 mt-1">
-                      {state.drawnNumbers.length}個目
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-center text-gray-500">
-                    まだ番号が引かれていません
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* 最近の番号 */}
-            <div className="w-full overflow-hidden rounded-xl shadow-2xl">
-              <div className="bg-gradient-to-r from-pink-500/70 to-orange-400/70 p-4 backdrop-blur-sm border-t border-l border-r border-white/20">
-                <h2 className="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-500 drop-shadow-md">
-                  既出番号（最新10個）
-                </h2>
-              </div>
-              
-              <div className="bg-white/30 backdrop-blur-md p-4 border-b border-l border-r border-white/20">
-                <div className="space-y-2">
-                  {state.drawnNumbers.slice(-10).reverse().map((num, idx) => (
-                    <div
-                      key={num}
-                      className={`
-                        flex items-center justify-between p-2 rounded transition-all
-                        ${idx === 0 && num === state.currentNumber 
-                          ? 'bg-yellow-400/50 border-2 border-yellow-400' 
-                          : 'bg-white/40'
-                        }
-                      `}
-                    >
-                      <span className="font-semibold text-gray-800">
-                        {getBingoLetter(num)}-{num}
-                      </span>
-                      {idx === 0 && num === state.currentNumber && (
-                        <span className="text-xs bg-yellow-400 text-yellow-900 px-2 py-1 rounded font-bold">
-                          最新
-                        </span>
-                      )}
-                    </div>
+                    </td>
                   ))}
-                  {state.drawnNumbers.length === 0 && (
-                    <p className="text-gray-500 text-center text-sm">
-                      まだ番号が引かれていません
-                    </p>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
 
-        {/* ビンゴアニメーション */}
-        {state.showBingoAnimation && (
-          <div className="fixed inset-0 flex items-center justify-center pointer-events-none z-50">
-            <div className="bg-yellow-400 text-yellow-900 px-12 py-8 rounded-2xl shadow-2xl animate-bounce">
-              <h1 className="text-6xl font-bold">BINGO!</h1>
-              <p className="text-2xl text-center mt-2">{state.bingoCount}列達成！</p>
-            </div>
-          </div>
-        )}
-
-        {/* 接続状態 */}
-        {!isConnected && (
-          <div className="fixed bottom-4 right-4 bg-red-600 text-white px-4 py-2 rounded-lg shadow-lg">
-            接続が切断されました。再接続中...
-          </div>
-        )}
-
-        {/* ゲーム状態表示 */}
-        {state.session?.status === 'waiting' && (
-          <div className="fixed bottom-4 left-4 bg-blue-600 text-white px-4 py-2 rounded-lg shadow-lg">
-            ゲーム開始を待っています...
-          </div>
-        )}
-
-        {/* ゲーム終了モーダル */}
-        {state.session?.status === 'finished' && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40">
-            <div className="bg-white rounded-lg p-8 max-w-md">
-              <h2 className="text-3xl font-bold text-gray-800 mb-4">ゲーム終了！</h2>
-              <p className="text-lg text-gray-600 mb-6">
-                お疲れ様でした！
-                {state.bingoCount > 0 && ` ${state.bingoCount}列のビンゴを達成しました！`}
-              </p>
-              <button
-                onClick={() => router.push('/')}
-                className="w-full bg-gradient-to-r from-pink-600 to-orange-500 hover:from-pink-700 hover:to-orange-600 text-white rounded-lg py-3 text-lg font-bold"
+        {/* 履歴 */}
+        <div className="bg-white rounded-lg shadow-xl p-6">
+          <h3 className="text-xl font-bold text-gray-800 mb-4">抽選履歴</h3>
+          <div className="flex flex-wrap gap-2">
+            {state.drawnNumbers.map(num => (
+              <span
+                key={num}
+                className={`
+                  px-3 py-1 rounded-full text-sm font-medium
+                  ${num === state.currentNumber ? 'bg-yellow-400 text-gray-800' : 'bg-gray-200 text-gray-700'}
+                `}
               >
-                トップページへ戻る
-              </button>
-            </div>
+                {getBingoLetter(num)}-{num}
+              </span>
+            ))}
+            {state.drawnNumbers.length === 0 && (
+              <p className="text-gray-500">まだ番号が引かれていません</p>
+            )}
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
