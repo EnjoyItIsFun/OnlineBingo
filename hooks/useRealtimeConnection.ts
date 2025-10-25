@@ -1,134 +1,66 @@
 // hooks/useRealtimeConnection.ts
-// Socket.io/Pusher自動切り替えアダプター
-// 環境変数に基づいて適切な接続方式を選択
-
+// Pusher専用のリアルタイム接続Hook
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
-import { useSocketConnection } from './useSocketConnection';
+import { useCallback } from 'react';
 import { usePusherConnection } from './usePusherConnection';
 import type { 
   GameSession, 
   Player,
-  ConnectionType,
   RealtimeEventHandler,
   RealtimeMemberInfo,
   UseRealtimeConnectionReturn
 } from '@/types';
 
-// 環境変数でどちらを使うか決定
-const getConnectionType = (): ConnectionType => {
-  // Vercel環境またはPUSHER_KEYが設定されている場合はPusherを使用
-  if (process.env.NEXT_PUBLIC_PUSHER_KEY || process.env.VERCEL) {
-    return 'pusher';
-  }
-  return 'socket';
-};
-
+/**
+ * リアルタイム接続用Hook
+ * Pusherを使用したリアルタイム通信を提供
+ * 
+ * @param sessionId - セッションID（nullの場合は接続しない）
+ * @returns リアルタイム接続のインターフェース
+ */
 export const useRealtimeConnection = (sessionId: string | null = null): UseRealtimeConnectionReturn => {
-  const [connectionType] = useState<ConnectionType>(getConnectionType());
-  
-  // Hooksは常に呼び出す（条件付きで使用しない）
-  const socketConnection = useSocketConnection();
+  // Pusher接続を使用
   const pusherConnection = usePusherConnection(sessionId);
 
   // 統一インターフェースの提供
-  const isConnected = connectionType === 'socket' 
-    ? socketConnection?.isConnected || false
-    : pusherConnection?.isConnected || false;
+  const isConnected = pusherConnection?.isConnected || false;
+  const isConnecting = pusherConnection?.isConnecting || false;
+  const members = (pusherConnection?.members || new Map()) as Map<string, RealtimeMemberInfo>;
 
-  // isConnectingはPusherのみに存在するため、Socket.ioの場合はfalse
-  const isConnecting = connectionType === 'pusher'
-    ? pusherConnection?.isConnecting || false
-    : false;
-
-  const members = connectionType === 'pusher'
-    ? (pusherConnection?.members || new Map()) as Map<string, RealtimeMemberInfo>
-    : new Map<string, RealtimeMemberInfo>();
-
-  // イベント送信（Socket.ioまたはPusher）
+  // イベント送信（Pusher APIルート経由）
   const emit = useCallback((eventName: string, data: Record<string, unknown>) => {
-    if (connectionType === 'socket' && socketConnection?.socket) {
-      // Socket.ioの場合は直接emit
-      socketConnection.socket.emit(eventName, data);
-    } else if (connectionType === 'pusher' && pusherConnection) {
-      // Pusherの場合はAPIルート経由
+    if (pusherConnection) {
       return pusherConnection.emit(eventName, data);
     }
-  }, [connectionType, socketConnection, pusherConnection]);
+    return Promise.reject(new Error('No connection available'));
+  }, [pusherConnection]);
 
   // イベントリスナー登録（ジェネリック対応）
   const on = useCallback(<T = unknown>(eventName: string, callback: RealtimeEventHandler<T>) => {
-    if (connectionType === 'socket' && socketConnection?.socket) {
-      socketConnection.socket.on(eventName, callback as RealtimeEventHandler<unknown>);
-    } else if (connectionType === 'pusher' && pusherConnection) {
+    if (pusherConnection) {
       pusherConnection.on<T>(eventName, callback);
     }
-  }, [connectionType, socketConnection, pusherConnection]);
+  }, [pusherConnection]);
 
   // イベントリスナー解除（ジェネリック対応）
   const off = useCallback(<T = unknown>(eventName: string, callback?: RealtimeEventHandler<T>) => {
-    if (connectionType === 'socket' && socketConnection?.socket) {
-      if (callback) {
-        socketConnection.socket.off(eventName, callback as RealtimeEventHandler<unknown>);
-      } else {
-        socketConnection.socket.off(eventName);
-      }
-    } else if (connectionType === 'pusher' && pusherConnection) {
+    if (pusherConnection) {
       pusherConnection.off<T>(eventName, callback);
     }
-  }, [connectionType, socketConnection, pusherConnection]);
+  }, [pusherConnection]);
 
   // 再接続
   const reconnect = useCallback(() => {
-    if (connectionType === 'socket' && socketConnection) {
-      // Socket.ioのreconnect実装
-      socketConnection.disconnect();
-      setTimeout(() => {
-        if (sessionId) {
-          const storedAuth = localStorage.getItem('socketAuth');
-          if (storedAuth) {
-            try {
-              const authData = JSON.parse(storedAuth);
-              socketConnection.connect(authData);
-            } catch (err) {
-              console.error('Failed to parse stored auth:', err);
-            }
-          }
-        }
-      }, 100);
-    } else if (connectionType === 'pusher' && pusherConnection) {
+    if (pusherConnection) {
       pusherConnection.reconnect();
     }
-  }, [connectionType, socketConnection, pusherConnection, sessionId]);
-
-  // セッションIDが変更された場合の再接続
-  useEffect(() => {
-    if (sessionId && connectionType === 'socket' && socketConnection && !socketConnection.isConnected) {
-      const storedAuth = localStorage.getItem('socketAuth');
-      if (storedAuth) {
-        try {
-          const authData = JSON.parse(storedAuth);
-          if (authData.sessionId === sessionId) {
-            socketConnection.connect(authData);
-          }
-        } catch (err) {
-          console.error('Failed to parse stored auth:', err);
-        }
-      }
-    }
-  }, [sessionId, connectionType, socketConnection]);
-
-  // デバッグ情報の出力
-  useEffect(() => {
-    console.log(`🔌 Using ${connectionType.toUpperCase()} for realtime connection`);
-    console.log(`📡 Connection status: ${isConnected ? 'Connected' : 'Disconnected'}`);
-  }, [connectionType, isConnected]);
+  }, [pusherConnection]);
 
   return {
     isConnected,
     isConnecting,
-    connectionType,
+    connectionType: 'pusher',
     emit,
     on,
     off,
@@ -137,23 +69,13 @@ export const useRealtimeConnection = (sessionId: string | null = null): UseRealt
   };
 };
 
-// ========================================
-// 移行用ヘルパー関数
-// ========================================
-
-/**
- * Socket.ioのイベント名をPusher互換に変換
- */
 export const convertSocketEventNameToPusher = (socketEventName: string): string => {
   // アンダースコアをハイフンに変換
   return socketEventName.replace(/_/g, '-');
 };
 
-/**
- * PusherのイベントデータをSocket.io形式に変換
- */
 export const convertPusherEventData = (pusherData: unknown): unknown => {
-  // Pusherのデータ構造をSocket.io互換に変換
+  // Pusherのデータ構造をそのまま返す
   if (pusherData && typeof pusherData === 'object') {
     const data = pusherData as Record<string, unknown>;
     
