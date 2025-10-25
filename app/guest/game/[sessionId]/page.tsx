@@ -1,4 +1,4 @@
-// app/guest/game/[sessionId]/page.tsx - TypeScriptエラー修正版
+// app/guest/game/[sessionId]/page.tsx - データ構造エラー修正版
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -90,6 +90,7 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
   // PromiseのparamsとsearchParamsを解決
   useEffect(() => {
     Promise.all([params, searchParams]).then(([p, sp]) => {
+      console.log('Resolved params:', p, sp);
       setResolvedParams(p);
       setResolvedSearchParams(sp);
     });
@@ -101,6 +102,7 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
 
     const fetchData = async () => {
       try {
+        console.log('Fetching session data...');
         // セッション情報取得
         const sessionRes = await fetch(`/api/sessions/${resolvedParams.sessionId}`, {
           headers: {
@@ -113,35 +115,52 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
         }
 
         const sessionData = await sessionRes.json();
-        const currentPlayer = sessionData.players.find((p: Player) => p.id === resolvedSearchParams.playerId);
+        console.log('Session data received:', sessionData);
 
-        if (currentPlayer && currentPlayer.board) {
-          // ボードを2次元配列のBingoCell形式に変換
-          const initialBoard: BingoCell[][] = currentPlayer.board.map((row: number[]) =>
-            row.map((num: number) => ({
-              number: num,
-              marked: num === 0 || sessionData.drawnNumbers?.includes(num)
-            }))
-          );
-
-          setState(prev => ({
-            ...prev,
-            session: sessionData,
-            board: initialBoard,
-            playerName: currentPlayer.name,
-            drawnNumbers: sessionData.drawnNumbers || [],
-            currentNumber: sessionData.currentNumber,
-            loading: false
-          }));
-
-          // 初回のビンゴチェック
-          const result = checkBingo(initialBoard);
-          setState(prev => ({
-            ...prev,
-            bingoLines: result.lines,
-            bingoCount: result.count
-          }));
+        // データ構造を確認してから安全にアクセス
+        if (!sessionData.players || !Array.isArray(sessionData.players)) {
+          console.error('Invalid session data: players array not found', sessionData);
+          throw new Error('セッションデータが不正です');
         }
+
+        const currentPlayer = sessionData.players.find((p: Player) => p.id === resolvedSearchParams.playerId);
+        
+        if (!currentPlayer) {
+          console.error('Player not found in session:', resolvedSearchParams.playerId);
+          console.error('Available players:', sessionData.players);
+          throw new Error('プレイヤーが見つかりません');
+        }
+
+        if (!currentPlayer.board || !Array.isArray(currentPlayer.board)) {
+          console.error('Invalid player data: board not found', currentPlayer);
+          throw new Error('ビンゴカードが見つかりません');
+        }
+
+        // ボードを2次元配列のBingoCell形式に変換
+        const initialBoard: BingoCell[][] = currentPlayer.board.map((row: number[]) =>
+          row.map((num: number) => ({
+            number: num,
+            marked: num === 0 || (sessionData.drawnNumbers?.includes(num) || false)
+          }))
+        );
+
+        setState(prev => ({
+          ...prev,
+          session: sessionData,
+          board: initialBoard,
+          playerName: currentPlayer.name,
+          drawnNumbers: sessionData.drawnNumbers || [],
+          currentNumber: sessionData.currentNumber || null,
+          loading: false
+        }));
+
+        // 初回のビンゴチェック
+        const result = checkBingo(initialBoard);
+        setState(prev => ({
+          ...prev,
+          bingoLines: result.lines,
+          bingoCount: result.count
+        }));
       } catch (error) {
         console.error('データ取得エラー:', error);
         setState(prev => ({
@@ -163,6 +182,12 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
       console.log('番号が引かれました:', data);
       
       setState(prev => {
+        // boardが空の場合は何もしない
+        if (!prev.board || prev.board.length === 0) {
+          console.error('Board is not initialized');
+          return prev;
+        }
+
         const newBoard = prev.board.map(row =>
           row.map(cell => ({
             ...cell,
@@ -197,28 +222,44 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
 
     const handleGameReset = () => {
       console.log('ゲームがリセットされました');
-      setState(prev => ({
-        ...prev,
-        board: prev.board.map(row =>
-          row.map(cell => ({
-            ...cell,
-            marked: cell.number === 0
-          }))
-        ),
-        currentNumber: null,
-        drawnNumbers: [],
-        bingoLines: [],
-        bingoCount: 0,
-        showBingoAnimation: false
-      }));
+      setState(prev => {
+        // boardが空の場合は何もしない
+        if (!prev.board || prev.board.length === 0) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          board: prev.board.map(row =>
+            row.map(cell => ({
+              ...cell,
+              marked: cell.number === 0
+            }))
+          ),
+          currentNumber: null,
+          drawnNumbers: [],
+          bingoLines: [],
+          bingoCount: 0,
+          showBingoAnimation: false
+        };
+      });
     };
 
     const handleSessionUpdated = (data: SessionUpdatedEventData) => {
       console.log('セッションが更新されました:', data);
-      setState(prev => ({
-        ...prev,
-        session: data.session
-      }));
+      
+      setState(prev => {
+        // 更新されたセッションデータの構造を確認
+        if (!data.session || !data.session.players || !Array.isArray(data.session.players)) {
+          console.error('Invalid session update data:', data);
+          return prev;
+        }
+
+        return {
+          ...prev,
+          session: data.session
+        };
+      });
     };
 
     const handleGameEnded = () => {
@@ -269,6 +310,17 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
           >
             トップへ戻る
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  // boardが初期化されていない場合のフォールバック
+  if (!state.board || state.board.length === 0) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-600 to-pink-600">
+        <div className="bg-white rounded-lg p-8">
+          <p className="text-gray-600 text-xl mb-4">ビンゴカードを準備中...</p>
         </div>
       </div>
     );
@@ -354,18 +406,19 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
         <div className="bg-white rounded-lg shadow-xl p-6">
           <h3 className="text-xl font-bold text-gray-800 mb-4">抽選履歴</h3>
           <div className="flex flex-wrap gap-2">
-            {state.drawnNumbers.map(num => (
-              <span
-                key={num}
-                className={`
-                  px-3 py-1 rounded-full text-sm font-medium
-                  ${num === state.currentNumber ? 'bg-yellow-400 text-gray-800' : 'bg-gray-200 text-gray-700'}
-                `}
-              >
-                {getBingoLetter(num)}-{num}
-              </span>
-            ))}
-            {state.drawnNumbers.length === 0 && (
+            {state.drawnNumbers && state.drawnNumbers.length > 0 ? (
+              state.drawnNumbers.map(num => (
+                <span
+                  key={num}
+                  className={`
+                    px-3 py-1 rounded-full text-sm font-medium
+                    ${num === state.currentNumber ? 'bg-yellow-400 text-gray-800' : 'bg-gray-200 text-gray-700'}
+                  `}
+                >
+                  {getBingoLetter(num)}-{num}
+                </span>
+              ))
+            ) : (
               <p className="text-gray-500">まだ番号が引かれていません</p>
             )}
           </div>
