@@ -1,5 +1,5 @@
 // app/api/pusher/trigger/route.ts
-// Pusherイベントトリガー用APIルート
+// Pusherイベントトリガー用APIルート（ビンゴ達成機能対応版）
 
 import { NextRequest, NextResponse } from 'next/server';
 import Pusher from 'pusher';
@@ -57,6 +57,7 @@ export async function POST(req: NextRequest) {
     // イベント名に基づいた処理とバリデーション
     let processedData = data;
     let updateSession = false;
+    const channelName = `presence-session-${sessionId}`;
 
     switch (eventName) {
       case 'start_game':
@@ -158,8 +159,53 @@ export async function POST(req: NextRequest) {
         updateSession = true;
         break;
 
+      case 'bingo_achieved':
+        // ビンゴ達成の処理
+        const achievingPlayer = session.players.find(p => p.id === playerId);
+        if (!achievingPlayer) {
+          return NextResponse.json(
+            { error: 'Player not found' },
+            { status: 404 }
+          );
+        }
+
+        const newBingoCount = data.bingoCount || 1;
+
+        // データベースのプレイヤー情報を更新
+        await db.collection<GameSession>('sessions').updateOne(
+          { sessionId, 'players.id': playerId },
+          { 
+            $set: { 
+              'players.$.bingoCount': newBingoCount,
+              'players.$.bingoAchievedAt': new Date().toISOString()
+            }
+          }
+        );
+
+        processedData = {
+          player: {
+            ...achievingPlayer,
+            bingoCount: newBingoCount
+          },
+          bingoCount: newBingoCount,
+          lines: data.lines || [],
+          achievedAt: new Date().toISOString()
+        };
+        
+        // player-bingoイベントとして配信
+        await pusher.trigger(
+          channelName,
+          'player-bingo',
+          processedData
+        );
+        
+        debugLog(`Player ${achievingPlayer.name} achieved BINGO! Count: ${newBingoCount}`);
+        
+        updateSession = true;
+        break;
+
       case 'player_bingo':
-        // ビンゴ宣言の処理
+        // ビンゴ宣言の処理（後方互換性のため残す）
         const player = session.players.find(p => p.id === playerId);
         if (!player) {
           return NextResponse.json(
@@ -179,26 +225,34 @@ export async function POST(req: NextRequest) {
         debugLog(`Triggering custom event: ${eventName}`, data);
     }
 
-    // Pusherイベントのトリガー
-    const channelName = `presence-session-${sessionId}`;
-    
     // イベント名をPusher互換に変換（client-プレフィックスを除去）
     const pusherEventName = eventName.startsWith('client-') 
       ? eventName.replace('client-', '').replace(/_/g, '-')
       : eventName.replace(/_/g, '-');
 
-    await pusher.trigger(channelName, pusherEventName, processedData);
-    
-    debugLog(`Pusher event triggered: ${pusherEventName}`, {
-      channel: channelName,
-      data: processedData
-    });
+    // bingo_achievedは既に上で処理済みなので、ここではスキップ
+    if (eventName !== 'bingo_achieved') {
+      await pusher.trigger(
+        channelName,
+        pusherEventName,
+        processedData
+      );
+      
+      debugLog(`Pusher event triggered: ${pusherEventName}`, {
+        channel: channelName,
+        data: processedData
+      });
+    }
 
     // セッション更新イベントも送信
     if (updateSession) {
       const updatedSession = await db.collection<GameSession>('sessions').findOne({ sessionId });
       if (updatedSession) {
-        await pusher.trigger(channelName, 'session-updated', updatedSession);
+        await pusher.trigger(
+          channelName,
+          'session-updated',
+          { session: updatedSession }
+        );
       }
     }
 

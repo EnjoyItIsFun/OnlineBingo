@@ -6,12 +6,12 @@ import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { usePusherConnection } from '@/hooks/usePusherConnection';
 import { useGameTimer } from '@/hooks/useGameTimer';
 import { 
+  GameSession,
   Player,
   NumberDrawnEventData,
   PlayerBingoEventData,
   GameStartedEventData,
   SessionUpdatedEventData,
-  DrawNumberResponse,
   HostGameState
 } from '@/types';
 import { 
@@ -133,7 +133,7 @@ const GamePageContent: React.FC = () => {
   });
 
   // Pusher接続
-  const { isConnected, on, off, emit } = usePusherConnection(sessionId);
+  const { isConnected, on, off } = usePusherConnection(sessionId);
   const { formattedTime } = useGameTimer(state.session?.status || 'waiting', 7200);
 
   // reconnectionDataをlocalStorageに保存
@@ -176,165 +176,225 @@ const GamePageContent: React.FC = () => {
 
     loadInitialData();
   }, [sessionId, accessToken]);
+useEffect(() => {
+  const handleNumberDrawn = (data: NumberDrawnEventData) => {
+    setState(prev => ({
+      ...prev,
+      currentNumber: data.number,
+      drawnNumbers: data.drawnNumbers || [],
+      remainingNumbers: prev.remainingNumbers.filter(n => n !== data.number),
+      isDrawing: false
+    }));
+  };
 
-  // Pusherイベントリスナー
-  useEffect(() => {
-    const handleNumberDrawn = (data: NumberDrawnEventData) => {
-      setState(prev => ({
-        ...prev,
-        currentNumber: data.number,
-        drawnNumbers: data.drawnNumbers || [],
-        remainingNumbers: prev.remainingNumbers.filter(n => n !== data.number),
-        isDrawing: false
-      }));
-    };
+  const handlePlayerBingo = (data: PlayerBingoEventData) => {
+    setState(prev => ({
+      ...prev,
+      session: prev.session ? {
+        ...prev.session,
+        players: prev.session.players.map(p => 
+          p.id === data.player.id 
+            ? { ...p, bingoCount: data.bingoCount }
+            : p
+        )
+      } : null
+    }));
+  };
 
-    const handlePlayerBingo = (data: PlayerBingoEventData) => {
-      setState(prev => ({
-        ...prev,
-        session: prev.session ? {
-          ...prev.session,
-          players: prev.session.players.map(p => 
-            p.id === data.player.id 
-              ? { ...p, bingoCount: data.bingoCount }
-              : p
-          )
-        } : null
-      }));
-    };
+  const handleGameStarted = () => {
+    setState(prev => ({
+      ...prev,
+      session: prev.session ? { ...prev.session, status: 'playing' } : null
+    }));
+  };
 
-    const handleGameStarted = () => {
-      setState(prev => ({
-        ...prev,
-        session: prev.session ? { ...prev.session, status: 'playing' } : null
-      }));
-    };
-
-    const handleSessionUpdated = (data: SessionUpdatedEventData) => {
-      setState(prev => ({
-        ...prev,
-        session: data.session,
-        drawnNumbers: data.session.numbers || prev.drawnNumbers
-      }));
-    };
-
-    // イベントリスナー登録
-    on<NumberDrawnEventData>('number_drawn', handleNumberDrawn);
-    on<PlayerBingoEventData>('player_bingo', handlePlayerBingo);
-    on<GameStartedEventData>('game_started', handleGameStarted);
-    on<SessionUpdatedEventData>('session_updated', handleSessionUpdated);
-
-    return () => {
-      off<NumberDrawnEventData>('number_drawn', handleNumberDrawn);
-      off<PlayerBingoEventData>('player_bingo', handlePlayerBingo);
-      off<GameStartedEventData>('game_started', handleGameStarted);
-      off<SessionUpdatedEventData>('session_updated', handleSessionUpdated);
-    };
-  }, [on, off]);
-
-  // ゲーム開始
-  const handleStartGame = useCallback(async () => {
-    if (!isConnected || state.session?.status !== 'waiting') return;
+  const handleSessionUpdated = (data: SessionUpdatedEventData) => {
+    const allNumbers = Array.from({ length: 75 }, (_, i) => i + 1);
+    const drawnNumbers = data.session.numbers || [];
     
-    try {
-      await emit('start_game', { sessionId });
-      setState(prev => ({
-        ...prev,
-        session: prev.session ? { ...prev.session, status: 'playing' } : null
-      }));
-    } catch {
-      setState(prev => ({
-        ...prev,
-        error: 'ゲーム開始に失敗しました'
-      }));
-    }
-  }, [isConnected, state.session, sessionId, emit]);
+    setState(prev => ({
+      ...prev,
+      session: data.session,
+      drawnNumbers: drawnNumbers,
+      currentNumber: data.session.currentNumber || prev.currentNumber,
+      remainingNumbers: allNumbers.filter(n => !drawnNumbers.includes(n))
+    }));
+  };
 
-  // 番号抽選（APIルート使用）
-  const handleDrawNumber = useCallback(async () => {
-    if (state.remainingNumbers.length === 0 || state.isDrawing) return;
+  // ゲームリセットのイベントハンドラー（useEffect内で定義）
+  const handleGameReset = (data: { sessionId: string; session: GameSession }) => {
+    const allNumbers = Array.from({ length: 75 }, (_, i) => i + 1);
+    setState(prev => ({
+      ...prev,
+      session: data.session,
+      drawnNumbers: [],
+      currentNumber: null,
+      remainingNumbers: allNumbers,
+      isDrawing: false,
+      error: null
+    }));
+  };
+
+  // イベントリスナー登録
+on<NumberDrawnEventData>('number-drawn', handleNumberDrawn);
+on<PlayerBingoEventData>('player-bingo', handlePlayerBingo);
+on<GameStartedEventData>('game-started', handleGameStarted);
+on<SessionUpdatedEventData>('session-updated', handleSessionUpdated);
+on<{ sessionId: string; session: GameSession }>('game-reset', handleGameReset);
+
+return () => {
+  off<NumberDrawnEventData>('number-drawn', handleNumberDrawn);
+  off<PlayerBingoEventData>('player-bingo', handlePlayerBingo);
+  off<GameStartedEventData>('game-started', handleGameStarted);
+  off<SessionUpdatedEventData>('session-updated', handleSessionUpdated);
+  off<{ sessionId: string; session: GameSession }>('game-reset', handleGameReset);
+};
+}, [on, off]);
+
+const handleStartGame = useCallback(async () => {
+  if (!isConnected || state.session?.status !== 'waiting') return;
+  
+  try {
+    // APIルート経由でゲーム開始を通知
+    const response = await fetch('/api/pusher/trigger', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        sessionId,
+        accessToken,
+        playerId: hostId,
+        eventName: 'start_game',
+        data: { sessionId }
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error('ゲーム開始に失敗しました');
+    }
+
+    // 楽観的更新
+    setState(prev => ({
+      ...prev,
+      session: prev.session ? { ...prev.session, status: 'playing' } : null
+    }));
+  } catch (err) {
+    setState(prev => ({
+      ...prev,
+      error: err instanceof Error ? err.message : 'ゲーム開始に失敗しました'
+    }));
+  }
+}, [isConnected, state.session, sessionId, accessToken, hostId]);
+
+// 番号抽選（APIルート使用）
+const handleDrawNumber = useCallback(async () => {
+  if (state.remainingNumbers.length === 0 || state.isDrawing) return;
+  
+  setState(prev => ({ ...prev, isDrawing: true, error: null }));
+  
+  try {
+    const response = await fetch(`/api/sessions/${sessionId}/draw`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        accessToken,
+        hostId
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || '番号の抽選に失敗しました');
+    }
+
+    // DrawNumberResponse型を使わずに処理
+    const data = await response.json();
     
-    setState(prev => ({ ...prev, isDrawing: true, error: null }));
-    
-    try {
-      const response = await fetch(`/api/sessions/${sessionId}/draw`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          accessToken,
-          hostId
-        })
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || '番号の抽選に失敗しました');
-      }
-
-      const data: DrawNumberResponse = await response.json();
-      
-      // Pusherイベントで自動的に更新されるため、ここでは成功のみ確認
-      if (!data.success) {
-        throw new Error(data.message || '番号の抽選に失敗しました');
-      }
-    } catch (err) {
-      setState(prev => ({
-        ...prev,
-        isDrawing: false,
-        error: err instanceof Error ? err.message : '番号の抽選に失敗しました'
-      }));
+    // Pusherイベントで自動的に更新されるため、ここでは成功のみ確認
+    if (!data.success) {
+      throw new Error(data.message || '番号の抽選に失敗しました');
     }
-  }, [state.remainingNumbers.length, state.isDrawing, sessionId, accessToken, hostId]);
+  } catch (err) {
+    setState(prev => ({
+      ...prev,
+      isDrawing: false,
+      error: err instanceof Error ? err.message : '番号の抽選に失敗しました'
+    }));
+  }
+}, [state.remainingNumbers.length, state.isDrawing, sessionId, accessToken, hostId]);
 
-  // ゲームリセット
-  const handleResetGame = useCallback(async () => {
-    if (!isConnected) return;
-    
-    try {
-      await emit('reset_game', { sessionId });
-      
-      const allNumbers = Array.from({ length: 75 }, (_, i) => i + 1);
-      setState(prev => ({
-        ...prev,
-        drawnNumbers: [],
-        currentNumber: null,
-        remainingNumbers: allNumbers,
-        session: prev.session ? {
-          ...prev.session,
-          status: 'waiting',
-          numbers: [],
-          currentNumber: null,
-          players: prev.session.players.map(p => ({ ...p, bingoCount: 0 }))
-        } : null
-      }));
-    } catch {
-      setState(prev => ({
-        ...prev,
-        error: 'ゲームリセットに失敗しました'
-      }));
-    }
-  }, [isConnected, sessionId, emit]);
+// ゲームリセット（修正版）
+const handleResetGame = useCallback(async () => {
+  if (!isConnected) return;
+  
+  try {
+    // APIルート経由でリセット処理を実行
+    const response = await fetch(`/api/sessions/${sessionId}/reset`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        accessToken,
+        hostId
+      })
+    });
 
-  // ゲーム終了
-  const handleEndGame = useCallback(async () => {
-    if (!state.isConfirmingEnd) {
-      setState(prev => ({ ...prev, isConfirmingEnd: true }));
-      setTimeout(() => setState(prev => ({ ...prev, isConfirmingEnd: false })), 3000);
-      return;
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'ゲームリセットに失敗しました');
     }
 
-    try {
-      await emit('cancel_session', { sessionId });
-      router.push('/');
-    } catch (err) {
-      setState(prev => ({
-        ...prev,
-        error: normalizeErrorMessage(err)
-      }));
+    // 状態更新はPusherイベント（game-reset）経由で行われる
+  } catch (err) {
+    setState(prev => ({
+      ...prev,
+      error: err instanceof Error ? err.message : 'ゲームリセットに失敗しました'
+    }));
+  }
+}, [isConnected, sessionId, accessToken, hostId]);
+
+// ゲーム終了
+const handleEndGame = useCallback(async () => {
+  if (!state.isConfirmingEnd) {
+    setState(prev => ({ ...prev, isConfirmingEnd: true }));
+    setTimeout(() => setState(prev => ({ ...prev, isConfirmingEnd: false })), 3000);
+    return;
+  }
+
+  try {
+    // APIルート経由でセッション終了を通知
+    const response = await fetch('/api/pusher/trigger', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        sessionId,
+        accessToken,
+        playerId: hostId,
+        eventName: 'cancel_session',
+        data: { sessionId }
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error('ゲーム終了に失敗しました');
     }
-  }, [state.isConfirmingEnd, sessionId, emit, router]);
+
+    router.push('/');
+  } catch (err) {
+    setState(prev => ({
+      ...prev,
+      error: err instanceof Error ? err.message : 'ゲーム終了に失敗しました'
+    }));
+  }
+}, [state.isConfirmingEnd, sessionId, accessToken, hostId, router]);
+
+
 
   // ローディング画面
   if (state.isLoading) {

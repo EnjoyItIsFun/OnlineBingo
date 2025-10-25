@@ -87,7 +87,7 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
   const [resolvedSearchParams, setResolvedSearchParams] = useState<{ playerId?: string; token?: string } | null>(null);
 
   // Pusher接続
-  const { isConnected, on, off, emit } = usePusherConnection(resolvedParams?.sessionId || null);
+  const { isConnected, on, off } = usePusherConnection(resolvedParams?.sessionId || null);
 
   // PromiseのparamsとsearchParamsを解決
   useEffect(() => {
@@ -175,88 +175,130 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
 
   // Pusherイベントリスナー
   useEffect(() => {
-    if (!resolvedParams || !resolvedSearchParams) return;
+  if (!resolvedParams || !resolvedSearchParams) return;
 
-    // ゲーム開始
-    const handleGameStarted = () => {
-      setState(prev => ({
-        ...prev,
-        session: prev.session ? { ...prev.session, status: 'playing' } : null
-      }));
-    };
+  // ゲーム開始
+  const handleGameStarted = () => {
+    setState(prev => ({
+      ...prev,
+      session: prev.session ? { ...prev.session, status: 'playing' } : null
+    }));
+  };
 
-    // 番号が引かれた
-    const handleNumberDrawn = (data: NumberDrawnEventData) => {
-      setState(prev => {
-        const newBoard = prev.board.map(row =>
-          row.map(cell => ({
-            ...cell,
-            marked: cell.marked || cell.number === data.number
-          }))
-        );
+  // 番号が引かれた
+  const handleNumberDrawn = (data: NumberDrawnEventData) => {
+    setState(prev => {
+      const newBoard = prev.board.map(row =>
+        row.map(cell => ({
+          ...cell,
+          marked: cell.marked || cell.number === data.number
+        }))
+      );
 
-        // ビンゴチェック
-        const { count, lines } = checkBingo(newBoard);
-        
-        // 新しいビンゴが達成された場合
-        const newBingo = count > prev.bingoCount;
-        
-        if (newBingo) {
-          // サーバーに通知
-          emit('bingo_achieved', {
+      // ビンゴチェック
+      const { count, lines } = checkBingo(newBoard);
+      
+      // 新しいビンゴが達成された場合
+      const newBingo = count > prev.bingoCount;
+      
+      if (newBingo && resolvedSearchParams?.playerId) {
+        // APIルート経由でビンゴ達成を通知
+        fetch('/api/pusher/trigger', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
             sessionId: resolvedParams.sessionId,
+            accessToken: resolvedSearchParams.token,
             playerId: resolvedSearchParams.playerId,
-            bingoCount: count,
-            lines
-          });
+            eventName: 'bingo_achieved',
+            data: {
+              bingoCount: count,
+              lines
+            }
+          })
+        }).catch(err => console.error('Failed to notify bingo:', err));
 
-          // アニメーションを3秒後に非表示
-          setTimeout(() => {
-            setState(s => ({ ...s, showBingoAnimation: false }));
-          }, 3000);
-        }
+        // アニメーションを3秒後に非表示
+        setTimeout(() => {
+          setState(s => ({ ...s, showBingoAnimation: false }));
+        }, 3000);
+      }
 
-        return {
-          ...prev,
-          currentNumber: data.number,
-          drawnNumbers: data.drawnNumbers,
-          board: newBoard,
-          bingoCount: count,
-          bingoLines: lines,
-          showBingoAnimation: newBingo
-        };
-      });
-    };
+      return {
+        ...prev,
+        currentNumber: data.number,
+        drawnNumbers: data.drawnNumbers || [],
+        board: newBoard,
+        bingoCount: count,
+        bingoLines: lines,
+        showBingoAnimation: newBingo
+      };
+    });
+  };
 
-    // セッション更新
-    const handleSessionUpdated = (data: SessionUpdatedEventData) => {
+  // セッション更新
+  const handleSessionUpdated = (data: SessionUpdatedEventData) => {
+    setState(prev => ({
+      ...prev,
+      session: data.session,
+      drawnNumbers: data.session.numbers || prev.drawnNumbers
+    }));
+  };
+
+  // ゲームリセット（新規追加）
+  const handleGameReset = (data: { sessionId: string; session: GameSession }) => {
+    // プレイヤー情報から新しいボードを取得
+    const player = data.session.players.find(
+      p => p.id === resolvedSearchParams?.playerId
+    );
+    
+    if (player) {
+      const newBoard: BingoCell[][] = player.board.map(row =>
+        row.map(num => ({
+          number: num,
+          marked: num === 0  // 中央のフリースペースのみマーク
+        }))
+      );
+      
       setState(prev => ({
         ...prev,
-        session: data.session
+        session: data.session,
+        board: newBoard,
+        currentNumber: null,
+        drawnNumbers: [],
+        bingoLines: [],
+        bingoCount: 0,
+        showBingoAnimation: false,
+        error: null
       }));
-    };
+    }
+  };
 
-    // ゲーム終了
-    const handleGameEnded = () => {
-      setState(prev => ({
-        ...prev,
-        session: prev.session ? { ...prev.session, status: 'finished' } : null
-      }));
-    };
+  // ゲーム終了
+  const handleGameEnded = () => {
+    setState(prev => ({
+      ...prev,
+      session: prev.session ? { ...prev.session, status: 'finished' } : null
+    }));
+  };
 
-    // イベントリスナー登録
-    on<GameStartedEventData>('game_started', handleGameStarted);
-    on<NumberDrawnEventData>('number_drawn', handleNumberDrawn);
-    on<SessionUpdatedEventData>('session_updated', handleSessionUpdated);
-    on('game_ended', handleGameEnded);
+  // イベントリスナー登録（Pusher形式のイベント名に修正）
+  on<GameStartedEventData>('game-started', handleGameStarted);
+on<NumberDrawnEventData>('number-drawn', handleNumberDrawn);
+on<SessionUpdatedEventData>('session-updated', handleSessionUpdated);
+on<{ sessionId: string; session: GameSession }>('game-reset', handleGameReset);
+on('game-ended', handleGameEnded); 
 
-    return () => {
-      off<GameStartedEventData>('game_started', handleGameStarted);
-      off<NumberDrawnEventData>('number_drawn', handleNumberDrawn);
-      off<SessionUpdatedEventData>('session_updated', handleSessionUpdated);
-      off('game_ended', handleGameEnded);
-    };
-  }, [resolvedParams, resolvedSearchParams, on, off, emit]);
+return () => {
+  off<GameStartedEventData>('game-started', handleGameStarted);
+  off<NumberDrawnEventData>('number-drawn', handleNumberDrawn);
+  off<SessionUpdatedEventData>('session-updated', handleSessionUpdated);
+  off<{ sessionId: string; session: GameSession }>('game-reset', handleGameReset);
+  off('game-ended', handleGameEnded);
+};
+}, [resolvedParams, resolvedSearchParams, on, off]);
 
   // ローディング画面
   if (state.loading) {
