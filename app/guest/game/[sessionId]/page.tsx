@@ -1,4 +1,4 @@
-// app/guest/game/[sessionId]/page.tsx - 型定義互換修正版
+// app/guest/game/[sessionId]/page.tsx - 完全修正版
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -19,9 +19,9 @@ interface GuestGamePageProps {
   searchParams: Promise<{ playerId?: string; token?: string; accessToken?: string }>;
 }
 
-// APIレスポンス用の拡張型（実際のAPIレスポンスに合わせる）
+// APIレスポンス用の拡張型
 interface SessionDataFromAPI extends Omit<GameSession, 'createdAt' | 'expiresAt'> {
-  drawnNumbers?: number[] | false | null;  // APIでは drawnNumbers を返すが、型定義では numbers
+  drawnNumbers?: number[] | false | null;
   createdAt: string;
   expiresAt: string;
 }
@@ -80,7 +80,7 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
     session: null,
     board: [],
     currentNumber: null,
-    drawnNumbers: [],  // 内部管理用
+    drawnNumbers: [],
     bingoLines: [],
     bingoCount: 0,
     showBingoAnimation: false,
@@ -103,7 +103,7 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
       // tokenパラメータまたはaccessTokenパラメータを受け入れる
       const searchParams = {
         playerId: sp.playerId,
-        token: sp.token || sp.accessToken  // どちらも受け入れる
+        token: sp.token || sp.accessToken
       };
       setResolvedSearchParams(searchParams);
     });
@@ -158,10 +158,8 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
         if (Array.isArray(sessionData.drawnNumbers)) {
           drawnNumbers = sessionData.drawnNumbers;
         } else if (Array.isArray(sessionData.numbers)) {
-          // 型定義ではnumbersフィールドを使用
           drawnNumbers = sessionData.numbers;
         } else if (sessionData.drawnNumbers === false || sessionData.drawnNumbers === null || sessionData.drawnNumbers === undefined) {
-          // drawnNumbersがfalse/null/undefinedの場合は空配列として扱う
           drawnNumbers = [];
           console.log('drawnNumbers is not an array, using empty array');
         } else {
@@ -176,12 +174,12 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
           }))
         );
 
-        // GameSession型に変換（createdAtとexpiresAtをDate型に）
+        // GameSession型に変換
         const session: GameSession = {
           ...sessionData,
           createdAt: new Date(sessionData.createdAt),
           expiresAt: new Date(sessionData.expiresAt),
-          numbers: drawnNumbers  // numbersフィールドに格納
+          numbers: drawnNumbers
         };
 
         setState(prev => ({
@@ -189,7 +187,7 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
           session: session,
           board: initialBoard,
           playerName: currentPlayer.name,
-          drawnNumbers: drawnNumbers,  // 内部管理用
+          drawnNumbers: drawnNumbers,
           currentNumber: sessionData.currentNumber || null,
           loading: false,
           error: null
