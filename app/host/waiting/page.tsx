@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Users, Copy, CheckCircle, Wifi, WifiOff } from 'lucide-react';
+import { Users, Copy, CheckCircle, Wifi, WifiOff, AlertCircle, RefreshCw } from 'lucide-react';
 import QRCode from 'qrcode';
 import { getClientBaseUrl, createParticipationUrl } from '@/utils/url';
 import { usePusherConnection } from '@/hooks/usePusherConnection';
@@ -28,17 +28,103 @@ function WaitingContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   
-  const sessionId = searchParams.get('sessionId');
-  const accessToken = searchParams.get('accessToken');
-  const hostId = searchParams.get('hostId');
+  // URLパラメータの取得（LocalStorageフォールバック付き）
+  const urlSessionId = searchParams.get('sessionId');
+  const urlAccessToken = searchParams.get('accessToken');
+  const urlHostId = searchParams.get('hostId');
+  
+  // LocalStorageから復元を試みる
+  const [sessionId, setSessionId] = useState<string>('');
+  const [accessToken, setAccessToken] = useState<string>('');
+  const [hostId, setHostId] = useState<string>('');
   
   const [sessionInfo, setSessionInfo] = useState<SessionInfo | null>(null);
   const [players, setPlayers] = useState<Player[]>([]);
   const [copied, setCopied] = useState<'sessionId' | 'accessToken' | 'url' | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isInitializing, setIsInitializing] = useState(true);
+
+  // パラメータの初期化とLocalStorage管理
+  useEffect(() => {
+    console.log('=== ホスト待機画面 初期化開始 ===');
+    console.log('URLパラメータ:', {
+      sessionId: urlSessionId,
+      accessToken: urlAccessToken,
+      hostId: urlHostId
+    });
+
+    // URLパラメータがある場合は優先
+    if (urlSessionId && urlAccessToken && urlHostId) {
+      console.log('URLパラメータから設定');
+      setSessionId(urlSessionId);
+      setAccessToken(urlAccessToken);
+      setHostId(urlHostId);
+      
+      // LocalStorageに保存（次回アクセス用）
+      localStorage.setItem('lastSessionId', urlSessionId);
+      localStorage.setItem('lastAccessToken', urlAccessToken);
+      localStorage.setItem('lastHostId', urlHostId);
+      
+      // hostSession形式でも保存
+      const hostSession = {
+        sessionId: urlSessionId,
+        accessToken: urlAccessToken,
+        hostId: urlHostId
+      };
+      localStorage.setItem('hostSession', JSON.stringify(hostSession));
+      
+      setIsInitializing(false);
+    } else {
+      // URLパラメータがない場合、LocalStorageから復元を試みる
+      console.log('LocalStorageから復元を試みます');
+      
+      // 方法1: hostSessionから
+      const hostSessionStr = localStorage.getItem('hostSession');
+      if (hostSessionStr) {
+        try {
+          const hostSession = JSON.parse(hostSessionStr);
+          if (hostSession.sessionId && hostSession.accessToken && hostSession.hostId) {
+            console.log('hostSessionから復元:', hostSession);
+            setSessionId(hostSession.sessionId);
+            setAccessToken(hostSession.accessToken);
+            setHostId(hostSession.hostId);
+            setIsInitializing(false);
+            return;
+          }
+        } catch (e) {
+          console.error('hostSessionのパースエラー:', e);
+        }
+      }
+      
+      // 方法2: 個別のキーから
+      const lastSessionId = localStorage.getItem('lastSessionId');
+      const lastAccessToken = localStorage.getItem('lastAccessToken');
+      const lastHostId = localStorage.getItem('lastHostId');
+      
+      if (lastSessionId && lastAccessToken && lastHostId) {
+        console.log('個別キーから復元:', {
+          sessionId: lastSessionId,
+          accessToken: lastAccessToken,
+          hostId: lastHostId
+        });
+        setSessionId(lastSessionId);
+        setAccessToken(lastAccessToken);
+        setHostId(lastHostId);
+        setIsInitializing(false);
+      } else {
+        console.error('必要な情報が取得できません。作成画面へリダイレクトします。');
+        setError('セッション情報が見つかりません。新しくゲームを作成してください。');
+        setTimeout(() => {
+          router.push('/host/create');
+        }, 3000);
+      }
+    }
+  }, [urlSessionId, urlAccessToken, urlHostId, router]);
 
   // Pusher接続前に認証情報を保存
   useEffect(() => {
     if (sessionId && accessToken && hostId) {
+      console.log('Pusher認証情報を設定');
       // ホスト用の認証情報をLocalStorageに保存（Pusher接続用）
       const reconnectionData = {
         sessionId,
@@ -49,45 +135,52 @@ function WaitingContent() {
         expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString()
       };
       localStorage.setItem('reconnectionData', JSON.stringify(reconnectionData));
+      console.log('reconnectionData保存:', reconnectionData);
     }
   }, [sessionId, accessToken, hostId]);
 
-  // Pusher接続
-  const { isConnected, emit, on, off, members } = usePusherConnection(sessionId || '');
+  // Pusher接続（sessionIdが確定してから）
+  const { isConnected, emit, on, off, members } = usePusherConnection(sessionId || null);
 
+  // セッション情報の生成
   useEffect(() => {
     if (!sessionId || !accessToken || !hostId) {
-      // パラメータが不足している場合、LocalStorageから取得を試みる
-      const hostSession = localStorage.getItem('hostSession');
-      if (hostSession) {
-        try {
-          const stored = JSON.parse(hostSession);
-          if (stored.sessionId && stored.accessToken && stored.hostId) {
-            const params = new URLSearchParams({
-              sessionId: stored.sessionId,
-              accessToken: stored.accessToken,
-              hostId: stored.hostId
-            });
-            router.replace(`/host/waiting?${params.toString()}`);
-            return;
-          }
-        } catch (e) {
-          console.error('Failed to parse hostSession:', e);
-        }
-      }
-      // どうしても情報が取れない場合は作成画面へ
-      router.push('/host/create');
+      console.log('セッション情報生成スキップ（パラメータ不足）');
       return;
     }
 
+    console.log('セッション情報を生成します');
+
     // LocalStorageからゲーム名を取得
-    const storedSession = localStorage.getItem(`session_${sessionId}`);
-    const gameName = storedSession ? JSON.parse(storedSession).name : 'ビンゴ大会';
-    const maxPlayers = storedSession ? JSON.parse(storedSession).maxPlayers : 25;
+    const storedSessionKey = `session_${sessionId}`;
+    const storedSession = localStorage.getItem(storedSessionKey);
+    let gameName = 'ビンゴ大会';
+    let maxPlayers = 25;
+    
+    if (storedSession) {
+      try {
+        const parsed = JSON.parse(storedSession);
+        gameName = parsed.name || gameName;
+        maxPlayers = parsed.maxPlayers || maxPlayers;
+        console.log('保存済みセッション情報:', parsed);
+      } catch (e) {
+        console.error('セッション情報のパースエラー:', e);
+      }
+    } else {
+      // セッション情報がない場合は新規作成として保存
+      const newSessionInfo = {
+        name: gameName,
+        maxPlayers: maxPlayers,
+        createdAt: new Date().toISOString()
+      };
+      localStorage.setItem(storedSessionKey, JSON.stringify(newSessionInfo));
+      console.log('新規セッション情報を保存:', newSessionInfo);
+    }
 
     // 参加用URLとQRコード生成
     const baseUrl = getClientBaseUrl();
     const participationUrl = createParticipationUrl(baseUrl, sessionId, accessToken);
+    console.log('参加URL生成:', participationUrl);
 
     QRCode.toDataURL(participationUrl, {
       errorCorrectionLevel: 'M',
@@ -98,7 +191,7 @@ function WaitingContent() {
       },
       width: 256,
     }).then(qrCodeDataUrl => {
-      setSessionInfo({
+      const info: SessionInfo = {
         sessionId,
         accessToken,
         hostId,
@@ -106,13 +199,26 @@ function WaitingContent() {
         maxPlayers,
         participationUrl,
         qrCodeDataUrl,
-      });
+      };
+      console.log('SessionInfo設定完了:', info);
+      setSessionInfo(info);
+      setError(null);
+    }).catch(err => {
+      console.error('QRコード生成エラー:', err);
+      setError('QRコードの生成に失敗しました');
     });
-  }, [sessionId, accessToken, hostId, router]);
+  }, [sessionId, accessToken, hostId]);
 
   // Pusherイベントリスナー設定とメンバー管理
   useEffect(() => {
-    if (!isConnected || !sessionId) return;
+    if (!isConnected || !sessionId) {
+      console.log('Pusherイベント設定スキップ（未接続）');
+      return;
+    }
+
+    console.log('Pusherイベントリスナー設定開始');
+    console.log('Pusher接続状態:', isConnected);
+    console.log('現在のメンバー数:', members?.size || 0);
 
     // プレゼンスチャンネルのメンバーから参加者リストを構築
     if (members && members.size > 0) {
@@ -122,11 +228,11 @@ function WaitingContent() {
         isHost: memberInfo.role === 'host'
       }));
       setPlayers(playersList);
-      console.log('Updated players from presence channel:', playersList);
+      console.log('メンバーリスト更新:', playersList);
     }
 
     const handlePlayerJoined = (data: unknown) => {
-      console.log('Player joined event:', data);
+      console.log('player_joined イベント受信:', data);
       const memberInfo = data as RealtimeMemberInfo;
       if (memberInfo && memberInfo.id) {
         const newPlayer: Player = {
@@ -136,14 +242,18 @@ function WaitingContent() {
         };
         setPlayers(prev => {
           // 重複を防ぐ
-          if (prev.some(p => p.id === newPlayer.id)) return prev;
+          if (prev.some(p => p.id === newPlayer.id)) {
+            console.log('既存のプレイヤーのため追加をスキップ:', newPlayer.id);
+            return prev;
+          }
+          console.log('新しいプレイヤーを追加:', newPlayer);
           return [...prev, newPlayer];
         });
       }
     };
 
     const handlePlayerLeft = (playerId: unknown) => {
-      console.log('Player left event:', playerId);
+      console.log('player_left イベント受信:', playerId);
       if (typeof playerId === 'string') {
         setPlayers(prev => prev.filter(p => p.id !== playerId));
       } else if (typeof playerId === 'object' && playerId !== null && 'id' in playerId) {
@@ -161,6 +271,23 @@ function WaitingContent() {
     };
   }, [isConnected, sessionId, members, on, off]);
 
+  // デバッグ情報の定期出力
+  useEffect(() => {
+    const interval = setInterval(() => {
+      console.log('=== デバッグ情報 ===');
+      console.log('SessionId:', sessionId);
+      console.log('AccessToken:', accessToken);
+      console.log('HostId:', hostId);
+      console.log('SessionInfo:', sessionInfo ? '設定済み' : '未設定');
+      console.log('Pusher接続:', isConnected);
+      console.log('参加者数:', players.length);
+      console.log('エラー:', error);
+      console.log('==================');
+    }, 10000); // 10秒ごと
+
+    return () => clearInterval(interval);
+  }, [sessionId, accessToken, hostId, sessionInfo, isConnected, players.length, error]);
+
   const handleCopy = async (text: string, type: 'sessionId' | 'accessToken' | 'url') => {
     try {
       await navigator.clipboard.writeText(text);
@@ -172,25 +299,83 @@ function WaitingContent() {
   };
 
   const handleStartGame = async () => {
-    if (!sessionInfo || players.length < 3) return;  // ホスト含めて3人以上必要
+    if (!sessionInfo || players.length < 2) return;  // ホスト以外に1人以上必要
     
+    console.log('ゲーム開始処理を実行');
     try {
       // ゲーム開始イベントを送信
       await emit('start_game', { sessionId: sessionInfo.sessionId });
+      console.log('start_gameイベント送信完了');
       
       // ゲーム画面へ遷移
-      router.push(`/host/game/${sessionInfo.sessionId}?accessToken=${sessionInfo.accessToken}&hostId=${sessionInfo.hostId}`);
+      const gameUrl = `/host/game/${sessionInfo.sessionId}?accessToken=${sessionInfo.accessToken}&hostId=${sessionInfo.hostId}`;
+      console.log('ゲーム画面へ遷移:', gameUrl);
+      router.push(gameUrl);
     } catch (error) {
       console.error('ゲーム開始エラー:', error);
+      setError('ゲームの開始に失敗しました');
     }
   };
 
+  const handleRetry = () => {
+    console.log('再試行を実行');
+    window.location.reload();
+  };
+
+  // 初期化中の表示
+  if (isInitializing) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-pink-500 via-red-500 to-orange-500">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-400 mx-auto mb-4"></div>
+          <p className="text-white text-lg">初期化中...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // エラー表示
+  if (error && !sessionInfo) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-pink-500 via-red-500 to-orange-500">
+        <div className="bg-white/10 backdrop-blur-md rounded-2xl p-8 max-w-md">
+          <div className="flex items-center justify-center w-16 h-16 bg-red-500/20 rounded-full mx-auto mb-4">
+            <AlertCircle className="w-8 h-8 text-red-300" />
+          </div>
+          <h2 className="text-2xl font-bold text-white text-center mb-4">エラーが発生しました</h2>
+          <p className="text-white/80 text-center mb-6">{error}</p>
+          <div className="space-y-3">
+            <button
+              onClick={handleRetry}
+              className="w-full py-3 bg-white/20 hover:bg-white/30 backdrop-blur-sm rounded-lg text-white font-medium transition-colors flex items-center justify-center gap-2"
+            >
+              <RefreshCw className="w-5 h-5" />
+              再試行
+            </button>
+            <button
+              onClick={() => router.push('/host/create')}
+              className="w-full py-3 bg-gradient-to-r from-pink-600 to-orange-500 hover:from-pink-700 hover:to-orange-600 rounded-lg text-white font-medium transition-all"
+            >
+              新しくゲームを作成
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ローディング表示
   if (!sessionInfo) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-pink-500 via-red-500 to-orange-500">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-400 mx-auto mb-4"></div>
-          <p className="text-white text-lg">読み込み中...</p>
+          <p className="text-white text-lg mb-2">ゲーム情報を読み込み中...</p>
+          <p className="text-white/60 text-sm">
+            SessionId: {sessionId || '取得中...'}<br />
+            AccessToken: {accessToken ? '設定済み' : '取得中...'}<br />
+            HostId: {hostId || '取得中...'}
+          </p>
         </div>
       </div>
     );
@@ -378,19 +563,19 @@ function WaitingContent() {
             <div className="mt-6">
               <button
                 onClick={handleStartGame}
-                disabled={players.length < 3}
+                disabled={players.length < 2}
                 className={`w-full py-4 rounded-lg font-bold text-lg transition-all transform ${
-                  players.length >= 3
+                  players.length >= 2
                     ? 'bg-gradient-to-r from-pink-600 to-orange-500 hover:from-pink-700 hover:to-orange-600 text-white shadow-lg hover:scale-105'
                     : 'bg-white/20 text-white/50 cursor-not-allowed'
                 }`}
               >
-                {players.length < 3 
-                  ? `あと${3 - players.length}人必要です` 
+                {players.length < 2 
+                  ? `あと${2 - players.length}人必要です` 
                   : '🎮 ゲームを開始する'}
               </button>
               <p className="text-center text-white/60 text-sm mt-2">
-                ※ 参加者が2人以上になるとゲームを開始できます
+                ※ ホスト以外に1人以上でゲームを開始できます
               </p>
             </div>
           </div>
