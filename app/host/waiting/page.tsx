@@ -298,29 +298,59 @@ function WaitingContent() {
     }
   };
 
-  const handleStartGame = async () => {
-    if (!sessionInfo || players.length < 2) return;  // ホスト以外に1人以上必要
+const handleStartGame = async () => {
+  if (!sessionInfo || players.length < 2) return;  // ホスト以外に1人以上必要
+  
+  console.log('ゲーム開始処理を実行');
+  setError(null);  // エラーをクリア
+  
+  try {
+    // 1. Pusher APIを使用してゲーム開始イベントを確実に送信
+    const triggerResponse = await fetch('/api/pusher/trigger', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        sessionId: sessionInfo.sessionId,
+        accessToken: sessionInfo.accessToken,
+        playerId: sessionInfo.hostId,
+        eventName: 'start_game',
+        data: {
+          sessionId: sessionInfo.sessionId,
+          startedAt: new Date().toISOString()
+        }
+      })
+    });
+
+    if (!triggerResponse.ok) {
+      const errorData = await triggerResponse.json();
+      throw new Error(errorData.error || 'ゲーム開始イベントの送信に失敗しました');
+    }
+
+    console.log('start_gameイベント送信完了（Pusher API経由）');
     
-    console.log('ゲーム開始処理を実行');
-    try {
-      // ゲーム開始イベントを送信
-      await emit('start_game', { sessionId: sessionInfo.sessionId });
-      console.log('start_gameイベント送信完了');
-      
-      // ゲーム画面へ遷移
-      const gameUrl = `/host/game/${sessionInfo.sessionId}?accessToken=${sessionInfo.accessToken}&hostId=${sessionInfo.hostId}`;
+    // 2. 既存のemitも念のため実行
+    await emit('start_game', { sessionId: sessionInfo.sessionId });
+    
+    // 3. ゲーム画面へ遷移（パラメータ名を修正: accessToken → token）
+    setTimeout(() => {
+      const gameUrl = `/host/game/${sessionInfo.sessionId}?token=${sessionInfo.accessToken}&hostId=${sessionInfo.hostId}`;
       console.log('ゲーム画面へ遷移:', gameUrl);
       router.push(gameUrl);
-    } catch (error) {
-      console.error('ゲーム開始エラー:', error);
-      setError('ゲームの開始に失敗しました');
-    }
-  };
+    }, 500);
+    
+  } catch (error) {
+    console.error('ゲーム開始エラー:', error);
+    setError(error instanceof Error ? error.message : 'ゲームの開始に失敗しました');
+  }
+};
 
-  const handleRetry = () => {
-    console.log('再試行を実行');
-    window.location.reload();
-  };
+// handleRetryはそのまま残す
+const handleRetry = () => {
+  console.log('再試行を実行');
+  window.location.reload();
+};
 
   // 初期化中の表示
   if (isInitializing) {

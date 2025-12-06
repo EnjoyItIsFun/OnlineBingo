@@ -168,15 +168,29 @@ const WaitingPageContent: React.FC = () => {
     };
 
     // 型定義に合わせて修正
-    const handleGameStarted = (data: unknown) => {
-      const gameData = data as { sessionId?: string } | undefined;
-      console.log('Game started event received:', gameData);
-      // sessionIdの確認
-      if (!gameData || gameData.sessionId === sessionId) {
-        console.log('Navigating to game page...');
-        router.push(`/guest/game/${sessionId}?playerId=${playerId}&accessToken=${accessToken}`);
-      }
-    };
+const handleGameStarted = (data: unknown) => {
+  console.log('=== game_started イベント受信 ===');
+  console.log('受信データ:', data);
+  console.log('現在のsessionId:', sessionId);
+  console.log('現在のplayerId:', playerId);
+  console.log('現在のaccessToken:', accessToken);
+  
+  const gameData = data as { sessionId?: string; startedAt?: string } | undefined;
+  
+  // sessionIdの確認（データがない場合も遷移を許可）
+  if (!gameData || !gameData.sessionId || gameData.sessionId === sessionId) {
+    console.log('ゲーム画面への遷移条件を満たしました');
+    
+    // 遷移URLを構築（パラメータ名を確認: accessTokenのまま）
+    const gameUrl = `/guest/game/${sessionId}?playerId=${playerId}&token=${accessToken}`;
+    console.log('遷移先URL:', gameUrl);
+    
+    // 遷移実行
+    router.push(gameUrl);
+  } else {
+    console.log('異なるセッションのイベントのため無視:', gameData.sessionId);
+  }
+};
 
     // any型を具体的な型に変更
     const handleSessionUpdated = (data: unknown) => {
