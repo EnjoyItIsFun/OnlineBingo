@@ -99,7 +99,7 @@ const JoinPageContent: React.FC = () => {
       localStorage.setItem('participantInfo', JSON.stringify(participantInfo));
 
       // 待機画面へリダイレクト
-      router.push(`/guest/waiting/${sessionId}?playerId=${response.playerId}&accessToken=${accessToken}`);
+      router.push(`/guest/waiting/${sessionId}?playerId=${response.playerId}&token=${accessToken}`);
       
     } catch (err) {
       console.error('Join error:', err);

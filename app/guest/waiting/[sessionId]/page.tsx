@@ -71,7 +71,7 @@ const WaitingPageContent: React.FC = () => {
   
   const sessionId = params.sessionId as string;
   const playerId = searchParams.get('playerId') || '';
-  const accessToken = searchParams.get('accessToken') || '';
+  const accessToken = searchParams.get('token') || searchParams.get('accessToken') || '';
 
   const [session, setSession] = useState<GameSession | null>(null);
   const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null);
