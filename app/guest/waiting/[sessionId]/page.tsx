@@ -1,7 +1,7 @@
 // app/guest/waiting/[sessionId]/page.tsx
 'use client';
 
-import { useState, useEffect, useCallback, Suspense } from 'react';
+import { Suspense, useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useRealtimeConnection } from '@/hooks/useRealtimeConnection';
 import { useNameAdjustment } from '@/hooks/useNameAdjustment';
@@ -64,6 +64,7 @@ const PlayerCard: React.FC<{
 };
 
 // 待機ページのメインコンポーネント
+// 待機ページのメインコンポーネント
 const WaitingPageContent: React.FC = () => {
   const params = useParams();
   const searchParams = useSearchParams();
@@ -78,9 +79,8 @@ const WaitingPageContent: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // リアルタイム接続（Socket.io/Pusher自動切り替え）
-  const connection = useRealtimeConnection(sessionId);
-  const { isConnected, emit, on, off, reconnect, connectionType } = connection;
+  // ★ 追加: joinGame送信済みフラグ
+  const hasJoinedRef = useRef(false);
 
   const { nameAdjustment, setAdjustment, acknowledgeAdjustment } = useNameAdjustment();
   const { formattedTime } = useGameTimer(
@@ -88,21 +88,25 @@ const WaitingPageContent: React.FC = () => {
     7200 // 2時間
   );
 
+  // ★ 追加: Pusher認証用のreconnectionDataを最初に設定
   useEffect(() => {
-  if (sessionId && accessToken && playerId) {
-    const reconnectionData = {
-      sessionId,
-      accessToken,
-      playerId,
-      playerName: currentPlayer?.name || '',
-      lastActiveAt: new Date().toISOString(),
-      expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString()
-    };
-    localStorage.setItem('reconnectionData', JSON.stringify(reconnectionData));
-    console.log('ゲスト: reconnectionData保存:', reconnectionData);
-  }
-}, [sessionId, accessToken, playerId, currentPlayer]);
+    if (sessionId && accessToken && playerId) {
+      const reconnectionData = {
+        sessionId,
+        accessToken,
+        playerId,
+        playerName: '',
+        lastActiveAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString()
+      };
+      localStorage.setItem('reconnectionData', JSON.stringify(reconnectionData));
+      console.log('ゲスト: reconnectionData保存完了');
+    }
+  }, [sessionId, accessToken, playerId]);
 
+  // リアルタイム接続（reconnectionData設定後に接続）
+  const connection = useRealtimeConnection(sessionId);
+  const { isConnected, emit, on, off, reconnect, connectionType } = connection;
 
   // 初期データ読み込み
   useEffect(() => {
@@ -117,9 +121,27 @@ const WaitingPageContent: React.FC = () => {
         const sessionData = await getSession(sessionId, accessToken);
         setSession(sessionData);
 
+        // ★ 追加: 既にゲームが開始されている場合は即座に遷移
+        if (sessionData.status === 'playing') {
+          console.log('ゲームは既に開始されています。ゲーム画面へ遷移します。');
+          router.push(`/guest/game/${sessionId}?playerId=${playerId}&token=${accessToken}`);
+          return;
+        }
+
         const player = sessionData.players.find((p: Player) => p.id === playerId);
         if (player) {
           setCurrentPlayer(player);
+          
+          // reconnectionDataにプレイヤー名を追加
+          const reconnectionData = {
+            sessionId,
+            accessToken,
+            playerId,
+            playerName: player.name,
+            lastActiveAt: new Date().toISOString(),
+            expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString()
+          };
+          localStorage.setItem('reconnectionData', JSON.stringify(reconnectionData));
           
           if (player.nameAdjusted && player.originalName && player.name !== player.originalName) {
             setAdjustment({
@@ -137,30 +159,32 @@ const WaitingPageContent: React.FC = () => {
     };
 
     loadInitialData();
-  }, [sessionId, accessToken, playerId, setAdjustment]);
+  }, [sessionId, accessToken, playerId, setAdjustment, router]);
 
-  // 接続後、joinGameイベントを送信
+  // ★ 修正: 接続後、joinGameイベントを一度だけ送信
   useEffect(() => {
-    if (!isConnected || !playerId) return;
+    if (!isConnected || !playerId || hasJoinedRef.current) return;
 
-    // joinGameイベントを送信（types/index.tsに定義済み）
+    hasJoinedRef.current = true;
+    
     emit('joinGame', {
       sessionId,
       userId: playerId,
       role: 'player'
     });
     
-    console.log(`Connected via ${connectionType.toUpperCase()}`);
+    console.log(`Connected via ${connectionType.toUpperCase()} - joinGame sent once`);
   }, [isConnected, sessionId, playerId, emit, connectionType]);
 
   // リアルタイムイベントリスナー設定
   useEffect(() => {
+    if (!isConnected) return;
+
     const handlePlayerJoined = (data: unknown) => {
       const player = data as Player;
       console.log('Player joined:', player);
       setSession(prev => {
         if (!prev) return prev;
-        // 既に存在する場合は追加しない
         if (prev.players.find(p => p.id === player.id)) {
           return prev;
         }
@@ -183,47 +207,36 @@ const WaitingPageContent: React.FC = () => {
       });
     };
 
-    // 型定義に合わせて修正
-const handleGameStarted = (data: unknown) => {
-  console.log('=== game_started イベント受信 ===');
-  console.log('受信データ:', data);
-  console.log('現在のsessionId:', sessionId);
-  console.log('現在のplayerId:', playerId);
-  console.log('現在のaccessToken:', accessToken);
-  
-  const gameData = data as { sessionId?: string; startedAt?: string } | undefined;
-  
-  // sessionIdの確認（データがない場合も遷移を許可）
-  if (!gameData || !gameData.sessionId || gameData.sessionId === sessionId) {
-    console.log('ゲーム画面への遷移条件を満たしました');
-    
-    // 遷移URLを構築（パラメータ名を確認: accessTokenのまま）
-    const gameUrl = `/guest/game/${sessionId}?playerId=${playerId}&token=${accessToken}`;
-    console.log('遷移先URL:', gameUrl);
-    
-    // 遷移実行
-    router.push(gameUrl);
-  } else {
-    console.log('異なるセッションのイベントのため無視:', gameData.sessionId);
-  }
-};
+    // ★ 修正: game-started イベントハンドラー（ハイフン版も登録）
+    const handleGameStarted = (data: unknown) => {
+      console.log('=== game-started イベント受信 ===');
+      console.log('受信データ:', data);
+      
+      const gameUrl = `/guest/game/${sessionId}?playerId=${playerId}&token=${accessToken}`;
+      console.log('遷移先URL:', gameUrl);
+      
+      router.push(gameUrl);
+    };
 
-    // any型を具体的な型に変更
     const handleSessionUpdated = (data: unknown) => {
-      const updatedSession = data as GameSession;
+      const updatedData = data as { session?: GameSession } | GameSession;
+      const updatedSession = 'session' in updatedData ? updatedData.session : updatedData as GameSession;
+      
       console.log('Session updated:', updatedSession);
-      setSession(updatedSession);
       
-      // ゲームが開始された場合
-      if (updatedSession.status === 'playing') {
-        console.log('Game is now playing, navigating to game page...');
-        router.push(`/guest/game/${sessionId}?playerId=${playerId}&accessToken=${accessToken}`);
-      }
-      
-      // 自分のプレイヤー情報を更新
-      const updatedPlayer = updatedSession.players.find(p => p.id === playerId);
-      if (updatedPlayer) {
-        setCurrentPlayer(updatedPlayer);
+      if (updatedSession) {
+        setSession(updatedSession);
+        
+        // ゲームが開始された場合
+        if (updatedSession.status === 'playing') {
+          console.log('Game is now playing, navigating to game page...');
+          router.push(`/guest/game/${sessionId}?playerId=${playerId}&token=${accessToken}`);
+        }
+        
+        const updatedPlayer = updatedSession.players?.find(p => p.id === playerId);
+        if (updatedPlayer) {
+          setCurrentPlayer(updatedPlayer);
+        }
       }
     };
 
@@ -243,25 +256,34 @@ const handleGameStarted = (data: unknown) => {
       }
     };
 
-    // イベントリスナー登録（types/index.tsに定義されているイベント）
+    // イベントリスナー登録
+    // ★ 重要: アンダースコア版とハイフン版の両方を登録
     on('player_joined', handlePlayerJoined);
+    on('player-joined', handlePlayerJoined);
     on('player_left', handlePlayerLeft);
+    on('player-left', handlePlayerLeft);
     on('game_started', handleGameStarted);
+    on('game-started', handleGameStarted);  // ★ ハイフン版も追加
     on('session_updated', handleSessionUpdated);
+    on('session-updated', handleSessionUpdated);  // ★ ハイフン版も追加
     on('connection_error', handleConnectionError);
-    
-    // カスタムイベント（session_cancelledは将来的にtypes/index.tsに追加推奨）
     on('session_cancelled', handleSessionCancelled);
+
+    console.log('イベントリスナー登録完了（アンダースコア版・ハイフン版両方）');
 
     return () => {
       off('player_joined', handlePlayerJoined);
+      off('player-joined', handlePlayerJoined);
       off('player_left', handlePlayerLeft);
+      off('player-left', handlePlayerLeft);
       off('game_started', handleGameStarted);
+      off('game-started', handleGameStarted);
       off('session_updated', handleSessionUpdated);
+      off('session-updated', handleSessionUpdated);
       off('connection_error', handleConnectionError);
       off('session_cancelled', handleSessionCancelled);
     };
-  }, [on, off, router, sessionId, playerId, accessToken]);
+  }, [isConnected, on, off, router, sessionId, playerId, accessToken]);
 
   // セッション離脱処理
   const handleLeaveSession = useCallback(async () => {
