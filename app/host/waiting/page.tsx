@@ -464,42 +464,24 @@ function WaitingContent() {
                 </button>
                 
                 {/* ドロップダウンメニュー */}
-                {menuState === 'open' && (
+                {(menuState === 'open' || menuState === 'confirming') && (
                   <div className="absolute right-0 mt-2 w-48 bg-red-900 rounded-lg shadow-lg z-50 overflow-hidden">
                     <button
-                      onClick={() => setMenuState('confirming')}
+                      onClick={() => {
+                        if (menuState === 'open') {
+                          setMenuState('confirming');
+                        } else {
+                          handleExitGame();
+                        }
+                      }}
                       className="w-full px-4 py-3 text-left text-white hover:bg-red-800 transition-colors"
                     >
-                      大会をキャンセル
+                      {menuState === 'open' ? (
+                        '大会を終了'
+                      ) : (
+                        <span className="text-red-400">本当に終了しますか？</span>
+                      )}
                     </button>
-                  </div>
-                )}
-                
-                {/* 確認メニュー */}
-                {menuState === 'confirming' && (
-                  <div className="absolute right-0 mt-2 w-56 bg-red-900 rounded-lg shadow-lg z-50 overflow-hidden">
-                    <div className="px-4 py-3 border-b border-red-700">
-                      <p className="text-red-300 text-sm font-medium">
-                        本当にキャンセルしますか？
-                      </p>
-                      <p className="text-red-400/70 text-xs mt-1">
-                        参加者全員が退出されます
-                      </p>
-                    </div>
-                    <div className="flex">
-                      <button
-                        onClick={() => setMenuState('closed')}
-                        className="flex-1 px-4 py-3 text-white/70 hover:bg-red-800 transition-colors text-sm"
-                      >
-                        戻る
-                      </button>
-                      <button
-                        onClick={handleExitGame}
-                        className="flex-1 px-4 py-3 text-red-300 hover:bg-red-800 transition-colors text-sm font-medium"
-                      >
-                        キャンセル
-                      </button>
-                    </div>
                   </div>
                 )}
               </div>
