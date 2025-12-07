@@ -6,7 +6,6 @@ import { useRouter } from 'next/navigation';
 interface FormData {
   name: string;
   maxPlayers: number;
-  passphrase: string;
 }
 
 interface SessionResponse {
@@ -23,8 +22,7 @@ export default function CreateGamePage() {
   const router = useRouter();
   const [formData, setFormData] = useState<FormData>({
     name: '',
-    maxPlayers: 10,
-    passphrase: ''  // 空文字に変更（プレースホルダーのみ表示）
+    maxPlayers: 10
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -55,8 +53,7 @@ export default function CreateGamePage() {
       // APIリクエスト
       const requestBody = {
         gameName: formData.name.trim(),
-        maxPlayers: formData.maxPlayers,
-        passphrase: formData.passphrase ? formData.passphrase.trim() : undefined
+        maxPlayers: formData.maxPlayers
       };
 
       const response = await fetch('/api/sessions', {
@@ -82,7 +79,6 @@ export default function CreateGamePage() {
         accessToken: data.accessToken,
         name: formData.name,
         maxPlayers: formData.maxPlayers,
-        passphrase: formData.passphrase,
         participationUrl: data.participationUrl,
         qrCode: data.qrCode,
         createdAt: new Date().toISOString()
@@ -173,24 +169,6 @@ export default function CreateGamePage() {
               <p className="text-xs text-white/70">※ 2〜99人の範囲で設定してください</p>
             </div>
 
-            {/* 合言葉入力（オプション） */}
-            <div className="space-y-2">
-              <label htmlFor="passphrase" className="block text-lg font-medium text-white drop-shadow-sm">
-                合言葉（オプション）
-              </label>
-              <input
-                type="text"
-                id="passphrase"
-                name="passphrase"
-                value={formData.passphrase}
-                onChange={handleInputChange}
-                disabled={isLoading}
-                className="w-full px-4 py-3 bg-white/50 backdrop-blur-sm text-gray-900 rounded-lg focus:ring-2 focus:ring-yellow-400 focus:outline-none transition-all placeholder-gray-600 disabled:opacity-50"
-                placeholder="例: 秘密の合言葉"
-              />
-              <p className="text-xs text-white/70">※ 設定すると、参加時に合言葉の入力が必要になります</p>
-            </div>
-
             {/* 送信ボタン */}
             <button
               type="submit"
@@ -230,7 +208,7 @@ export default function CreateGamePage() {
         {/* ヒント */}
         <div className="mt-6 bg-white/20 backdrop-blur-sm rounded-lg p-4 border border-white/30">
           <p className="text-sm text-white/90">
-            💡 ヒント：作成後、<strong>セッションID</strong>と<strong>アクセストークン</strong>が生成されます。参加者と共有してください。
+            💡 ヒント：作成後、参加者に<strong>QRコード</strong>または<strong>URL</strong>を共有してください。
           </p>
         </div>
       </div>
