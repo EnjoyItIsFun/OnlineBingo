@@ -1,6 +1,7 @@
 // app/api/sessions/[sessionId]/leave/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { getDatabase } from '@/lib/database';
+import Pusher from 'pusher';
 import { 
   GameSession, 
   APIRouteContext, 
@@ -12,14 +13,27 @@ import {
   ERROR_MESSAGES
 } from '@/types';
 
+// Pusherインスタンス
+const pusher = new Pusher({
+  appId: process.env.PUSHER_APP_ID!,
+  key: process.env.PUSHER_KEY!,
+  secret: process.env.PUSHER_SECRET!,
+  cluster: process.env.PUSHER_CLUSTER!,
+  useTLS: true,
+});
+
 export async function POST(
   request: NextRequest,
   context: APIRouteContext<SessionRouteParams>
 ) {
   try {
-    // リクエストボディを取得（型定義使用）
+    // リクエストボディを取得
     const body: LeaveSessionRequest = await request.json();
-    const { playerId, accessToken } = body;
+    const { playerId } = body;
+    
+    // Authorizationヘッダーからトークンを取得
+    const authHeader = request.headers.get('Authorization');
+    const accessToken = authHeader?.replace('Bearer ', '');
     
     // paramsをawaitで取得（Next.js 15の新しい仕様）
     const params = await context.params;
@@ -74,12 +88,27 @@ export async function POST(
       { 
         $pull: { 
           players: { id: playerId }
-        } 
-      } as { $pull: { players: { id: string } } },
+        },
+        $set: { updatedAt: new Date() }
+      } as { $pull: { players: { id: string } }; $set: { updatedAt: Date } },
       { returnDocument: 'after' }
     );
 
-    // 成功レスポンス（型定義使用）
+    // Pusherで退出イベントを送信
+    try {
+      await pusher.trigger(
+        `presence-session-${sessionId}`,
+        'player-left',
+        playerId
+      );
+      
+      console.log(`Player left event sent: ${playerExists.name} (${playerId})`);
+    } catch (pusherError) {
+      console.error('Failed to send Pusher event:', pusherError);
+      // Pusherエラーは無視して続行（退出自体は成功）
+    }
+
+    // 成功レスポンス
     const response: LeaveSessionResponse = {
       success: true,
       message: 'セッションから退出しました',
@@ -91,7 +120,6 @@ export async function POST(
   } catch (error) {
     console.error('Leave session error:', error);
     
-    // エラーレスポンス（型定義使用）
     const errorResponse: APIError = {
       error: ERROR_MESSAGES[ErrorCode.INTERNAL_ERROR],
       code: ErrorCode.INTERNAL_ERROR,

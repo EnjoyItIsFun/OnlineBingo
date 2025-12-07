@@ -286,11 +286,17 @@ const WaitingPageContent: React.FC = () => {
   }, [isConnected, on, off, router, sessionId, playerId, accessToken]);
 
   // セッション離脱処理
+// セッション離脱処理
   const handleLeaveSession = useCallback(async () => {
     if (!session || !currentPlayer) return;
 
     try {
       await leaveSession(sessionId, currentPlayer.id, accessToken);
+      
+      // 完全退出：関連するLocalStorageをクリア
+      localStorage.removeItem('reconnectionData');
+      localStorage.removeItem(`session_${sessionId}`);
+      
       router.push('/guest/join');
     } catch (err) {
       setError(normalizeErrorMessage(err));
