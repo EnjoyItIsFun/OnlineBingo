@@ -418,18 +418,18 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
             
             {/* ドロップダウンメニュー */}
             {menuState !== 'closed' && (
-              <div className="absolute top-10 right-0 bg-white/30 backdrop-blur-md rounded-lg shadow-xl border border-white/30 overflow-hidden min-w-[160px] z-10">
+              <div className="absolute top-10 right-0 bg-purple-900 rounded-lg shadow-xl border border-purple-400/50 overflow-hidden min-w-[180px] z-10">
                 {menuState === 'open' ? (
                   <button
                     onClick={() => setMenuState('confirming')}
-                    className="w-full px-4 py-3 text-left text-white hover:bg-white/20 transition-colors text-sm"
+                    className="w-full px-4 py-3 text-left text-white hover:bg-purple-800 transition-colors text-sm"
                   >
                     ゲームを退出
                   </button>
                 ) : (
                   <button
                     onClick={() => router.push('/')}
-                    className="w-full px-4 py-3 text-left text-red-300 hover:bg-red-500/30 transition-colors text-sm font-medium"
+                    className="w-full px-4 py-3 text-left text-red-400 hover:bg-red-900/50 transition-colors text-sm font-medium"
                   >
                     本当に退出しますか？
                   </button>
