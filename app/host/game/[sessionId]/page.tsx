@@ -383,7 +383,7 @@ export default function HostGamePage({ params, searchParams }: HostGamePageProps
           <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
           <p className="text-red-600 text-xl mb-4">{state.error}</p>
           <button
-            onClick={() => router.push('/host')}
+            onClick={() => router.push('/')}
             className="w-full px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg font-semibold hover:opacity-90 transition-all"
           >
             ホーム画面へ戻る
