@@ -1,5 +1,4 @@
 // app/api/pusher/trigger/route.ts
-// Pusherイベントトリガー用APIルート（ビンゴ達成機能対応版）
 
 import { NextRequest, NextResponse } from 'next/server';
 import Pusher from 'pusher';
@@ -85,8 +84,23 @@ export async function POST(req: NextRequest) {
           sessionId,
           startedAt: new Date().toISOString(),
         };
-        updateSession = true;
-        break;
+
+        // ★ 修正: ゲストが待っている 'game-started' イベントを送信
+        await pusher.trigger(channelName, 'game-started', processedData);
+        debugLog(`Game started event sent: game-started`, { channel: channelName, data: processedData });
+
+        // session-updated も送信
+        const updatedSessionForStart = await db.collection<GameSession>('sessions').findOne({ sessionId });
+        if (updatedSessionForStart) {
+          await pusher.trigger(channelName, 'session-updated', { session: updatedSessionForStart });
+        }
+
+        // 早期リターン（後の汎用処理をスキップ）
+        return NextResponse.json({ 
+          success: true,
+          event: 'game-started',
+          channel: channelName 
+        });
 
       case 'draw_number':
       case 'client-draw-number':
@@ -147,10 +161,9 @@ export async function POST(req: NextRequest) {
               status: 'waiting',
               numbers: [],
               currentNumber: null,
-              startedAt: undefined  // nullではなくundefinedを使用
             },
             $unset: {
-              startedAt: 1  // フィールドを削除
+              startedAt: 1
             }
           }
         );

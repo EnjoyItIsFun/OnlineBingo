@@ -88,6 +88,22 @@ const WaitingPageContent: React.FC = () => {
     7200 // 2時間
   );
 
+  useEffect(() => {
+  if (sessionId && accessToken && playerId) {
+    const reconnectionData = {
+      sessionId,
+      accessToken,
+      playerId,
+      playerName: currentPlayer?.name || '',
+      lastActiveAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString()
+    };
+    localStorage.setItem('reconnectionData', JSON.stringify(reconnectionData));
+    console.log('ゲスト: reconnectionData保存:', reconnectionData);
+  }
+}, [sessionId, accessToken, playerId, currentPlayer]);
+
+
   // 初期データ読み込み
   useEffect(() => {
     const loadInitialData = async () => {
