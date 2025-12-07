@@ -95,8 +95,8 @@ export default function CreateGamePage() {
 
       console.log('Session saved to localStorage:', sessionInfo);
 
-      // 作成完了画面へ遷移
-      router.push('/host/made-game');
+      // 待機画面へ直接遷移（LocalStorageから情報を読み取る）
+      router.push('/host/waiting');
 
     } catch (err) {
       console.error('セッション作成エラー:', err);
