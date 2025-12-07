@@ -91,6 +91,9 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
 
   const [resolvedParams, setResolvedParams] = useState<{ sessionId: string } | null>(null);
   const [resolvedSearchParams, setResolvedSearchParams] = useState<{ playerId?: string; token?: string }| null>(null);
+  
+  // メニュー状態: 'closed' | 'open' | 'confirming'
+  const [menuState, setMenuState] = useState<'closed' | 'open' | 'confirming'>('closed');
 
   // Pusher接続
   const { isConnected, on, off, emit } = usePusherConnection(resolvedParams?.sessionId || null);
@@ -398,8 +401,44 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
 
       <div className="max-w-md mx-auto">
         {/* ヘッダー */}
-        <div className="bg-white/20 backdrop-blur-md rounded-lg shadow-xl p-4 mb-4 border border-white/30">
-          <h1 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-200 to-yellow-400 mb-2">
+        <div className="bg-white/20 backdrop-blur-md rounded-lg shadow-xl p-4 mb-4 border border-white/30 relative">
+          {/* 三点メニューボタン */}
+          <div className="absolute top-2 right-2">
+            <button
+              onClick={() => setMenuState(prev => prev === 'closed' ? 'open' : 'closed')}
+              className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+              aria-label="メニュー"
+            >
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+                <circle cx="10" cy="4" r="2" />
+                <circle cx="10" cy="10" r="2" />
+                <circle cx="10" cy="16" r="2" />
+              </svg>
+            </button>
+            
+            {/* ドロップダウンメニュー */}
+            {menuState !== 'closed' && (
+              <div className="absolute top-10 right-0 bg-white/30 backdrop-blur-md rounded-lg shadow-xl border border-white/30 overflow-hidden min-w-[160px] z-10">
+                {menuState === 'open' ? (
+                  <button
+                    onClick={() => setMenuState('confirming')}
+                    className="w-full px-4 py-3 text-left text-white hover:bg-white/20 transition-colors text-sm"
+                  >
+                    ゲームを退出
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => router.push('/')}
+                    className="w-full px-4 py-3 text-left text-red-300 hover:bg-red-500/30 transition-colors text-sm font-medium"
+                  >
+                    本当に退出しますか？
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+          
+          <h1 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-200 to-yellow-400 mb-2 pr-8">
             {state.session?.gameName || 'ビンゴゲーム'}
           </h1>
           <div className="flex justify-between items-center">
