@@ -38,7 +38,6 @@
 | データベース | MongoDB Atlas |
 | リアルタイム通信 | Pusher |
 | ホスティング | Vercel |
-| UIアイコン | Lucide React |
 
 ## 💡 技術選定の理由
 
@@ -60,11 +59,6 @@
     ├── API Routes ←→ MongoDB Atlas
     └── Pusher ←→ Realtime Events
 ```
-
-### データフロー
-1. **セッション作成**: Client → API Routes → MongoDB
-2. **リアルタイム通信**: Client ↔ Pusher Channels
-3. **状態管理**: MongoDB (永続化) + Pusher (配信)
 
 ## 🔧 技術的な特徴
 
@@ -105,44 +99,6 @@ on('game_started', handler);
 4. ホストが抽選する番号に応じてマスをマーク
 5. ビンゴ達成時は自動で通知
 
-## 🔨 ローカル開発
-
-### 必要な環境
-- Node.js 18.x以上
-- npm
-
-### セットアップ
-
-```bash
-git clone https://github.com/EnjoyItIsFun/OnlineBingo.git
-cd OnlineBingo
-npm install
-cp .env.local.example .env.local
-```
-
-### 環境変数の設定
-
-`.env.local`に以下を設定:
-
-```env
-MONGODB_URI=your_mongodb_connection_string
-MONGODB_DB=bingo-game
-PUSHER_APP_ID=your_pusher_app_id
-PUSHER_KEY=your_pusher_key
-PUSHER_SECRET=your_pusher_secret
-PUSHER_CLUSTER=ap3
-NEXT_PUBLIC_PUSHER_KEY=your_pusher_key
-NEXT_PUBLIC_PUSHER_CLUSTER=ap3
-```
-
-### 開発サーバー起動
-
-```bash
-npm run dev
-```
-
-http://localhost:3000 でアクセス可能。
-
 ## 📚 開発で学んだこと
 
 - **サーバーレス環境の制約**: Socket.ioはWebSocket接続を維持するためVercelでは動作しない。マネージドサービス（Pusher）への移行で解決
@@ -156,42 +112,4 @@ http://localhost:3000 でアクセス可能。
 - 効果音の実装
 - ビンゴ達成時の演出強化
 
-## 📁 ディレクトリ構成
-
-```
-app/
-├── api/
-│   ├── pusher/
-│   │   ├── auth/route.ts          # Pusher認証
-│   │   └── trigger/route.ts       # イベントトリガー
-│   └── sessions/
-│       └── [sessionId]/
-│           ├── route.ts           # セッション取得
-│           ├── join/route.ts      # 参加API
-│           ├── leave/route.ts     # 離脱API
-│           └── draw/route.ts      # 番号抽選API
-├── host/
-│   ├── create/page.tsx            # セッション作成
-│   ├── waiting/page.tsx           # ホスト待機画面
-│   ├── game/[sessionId]/page.tsx  # ホストゲーム画面
-│   └── result/[sessionId]/page.tsx
-├── guest/
-│   ├── join/page.tsx              # 参加画面
-│   ├── waiting/[sessionId]/page.tsx
-│   ├── game/[sessionId]/page.tsx
-│   └── result/[sessionId]/page.tsx
-└── page.tsx                       # トップページ
-
-hooks/
-├── usePusherConnection.ts         # Pusher接続管理
-├── useRealtimeConnection.ts       # 統一インターフェース
-├── useGameTimer.ts
-└── useNameAdjustment.ts
-
-types/
-└── index.ts                       # 型定義（集約）
-
-utils/
-├── api.ts                         # APIクライアント
-└── gameUtils.ts                   # ゲームロジック
-```
+---
