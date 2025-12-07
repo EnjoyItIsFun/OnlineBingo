@@ -1,4 +1,4 @@
-// app/guest/game/[sessionId]/page.tsx - 完全修正版
+// app/guest/game/[sessionId]/page.tsx
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -358,11 +358,11 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
   if (state.error) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-600 to-pink-600">
-        <div className="bg-white rounded-lg p-8">
-          <p className="text-red-600 text-xl mb-4">エラー: {state.error}</p>
+        <div className="bg-white/20 backdrop-blur-md rounded-lg p-8 border border-white/30">
+          <p className="text-white text-xl mb-4">エラー: {state.error}</p>
           <button
             onClick={() => router.push('/guest/join')}
-            className="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+            className="px-6 py-3 bg-white/20 text-white rounded-lg hover:bg-white/30 transition-colors border border-white/30"
           >
             参加画面へ戻る
           </button>
@@ -375,8 +375,8 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
   if (!state.board || state.board.length === 0) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-600 to-pink-600">
-        <div className="bg-white rounded-lg p-8">
-          <p className="text-gray-600 text-xl mb-4">ビンゴカードを準備中...</p>
+        <div className="bg-white/20 backdrop-blur-md rounded-lg p-8 border border-white/30">
+          <p className="text-white text-xl mb-4">ビンゴカードを準備中...</p>
         </div>
       </div>
     );
@@ -387,27 +387,27 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
       {/* ビンゴアニメーション */}
       {state.showBingoAnimation && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 animate-fade-in">
-          <div className="bg-white rounded-2xl p-12 animate-bounce-in">
-            <h2 className="text-6xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-pink-600 animate-pulse">
+          <div className="bg-white/20 backdrop-blur-md rounded-2xl p-12 animate-bounce-in border border-white/30">
+            <h2 className="text-6xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-500 animate-pulse">
               BINGO!!
             </h2>
-            <p className="text-2xl text-gray-700 mt-4 text-center">{state.bingoCount}ライン達成！</p>
+            <p className="text-2xl text-white mt-4 text-center">{state.bingoCount}ライン達成！</p>
           </div>
         </div>
       )}
 
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-md mx-auto">
         {/* ヘッダー */}
-        <div className="bg-white rounded-lg shadow-xl p-6 mb-6">
-          <h1 className="text-3xl font-bold text-gray-800 mb-2">
+        <div className="bg-white/20 backdrop-blur-md rounded-lg shadow-xl p-4 mb-4 border border-white/30">
+          <h1 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-200 to-yellow-400 mb-2">
             {state.session?.gameName || 'ビンゴゲーム'}
           </h1>
           <div className="flex justify-between items-center">
-            <p className="text-lg text-gray-600">プレイヤー: {state.playerName}</p>
+            <p className="text-sm text-white/90">プレイヤー: {state.playerName}</p>
             <div className="text-right">
-              <p className="text-sm text-gray-500">接続状態: {isConnected ? '✅ 接続中' : '❌ 切断'}</p>
+              <p className="text-xs text-white/70">{isConnected ? '✅ 接続中' : '❌ 切断'}</p>
               {state.bingoCount > 0 && (
-                <p className="text-lg font-bold text-purple-600">
+                <p className="text-sm font-bold text-yellow-300">
                   {state.bingoCount}ビンゴ達成！
                 </p>
               )}
@@ -417,65 +417,76 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
 
         {/* 現在の番号表示 */}
         {state.currentNumber && (
-          <div className="bg-yellow-400 rounded-lg shadow-xl p-6 mb-6 animate-slide-in">
-            <p className="text-center text-gray-800 text-lg mb-2">現在の番号</p>
-            <p className="text-center text-6xl font-bold text-gray-900">
+          <div className="bg-gradient-to-r from-yellow-300 to-yellow-500 rounded-lg shadow-xl p-4 mb-4 animate-slide-in border-2 border-yellow-600">
+            <p className="text-center text-purple-800 text-sm mb-1">現在の番号</p>
+            <p className="text-center text-5xl font-bold text-purple-900">
               {getBingoLetter(state.currentNumber)}-{state.currentNumber}
             </p>
           </div>
         )}
 
         {/* ビンゴカード */}
-        <div className="bg-white rounded-lg shadow-xl p-6 mb-6">
-          <table className="w-full">
-            <thead>
-              <tr>
-                {['B', 'I', 'N', 'G', 'O'].map(letter => (
-                  <th key={letter} className="text-2xl font-bold text-purple-600 p-2">
-                    {letter}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {state.board.map((row, rowIndex) => (
-                <tr key={rowIndex}>
-                  {row.map((cell, colIndex) => (
-                    <td key={colIndex} className="p-2">
-                      <div className={`
-                        aspect-square flex items-center justify-center text-xl font-bold rounded-lg transition-all
-                        ${cell.marked ? 'bg-purple-600 text-white scale-95' : 'bg-gray-100 text-gray-800'}
-                        ${cell.number === 0 ? 'bg-yellow-400 text-gray-800' : ''}
-                        hover:scale-105
-                      `}>
-                        {cell.number === 0 ? 'FREE' : cell.number}
-                      </div>
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="bg-white/20 backdrop-blur-md rounded-lg shadow-xl p-4 mb-4 border border-white/30">
+          {/* B I N G O ヘッダー */}
+          <div className="grid grid-cols-5 gap-2 mb-3">
+            {['B', 'I', 'N', 'G', 'O'].map(letter => (
+              <div 
+                key={letter} 
+                className="text-center font-extrabold text-xl p-1 text-transparent bg-clip-text bg-gradient-to-br from-yellow-200 to-yellow-400 drop-shadow-sm"
+              >
+                {letter}
+              </div>
+            ))}
+          </div>
+          
+          {/* ビンゴ数字グリッド */}
+          <div className="grid grid-cols-5 gap-2">
+            {state.board.map((row, rowIndex) =>
+              row.map((cell, colIndex) => (
+                <div
+                  key={`${rowIndex}-${colIndex}`}
+                  className={`
+                    aspect-square flex items-center justify-center
+                    rounded-lg shadow-md transition-all
+                    ${cell.number === 0
+                      ? 'bg-gradient-to-br from-yellow-300 to-yellow-500 text-purple-700 border-2 border-purple-600'
+                      : cell.marked
+                        ? 'bg-gradient-to-br from-yellow-300 to-yellow-500 text-purple-700 border-2 border-purple-600 scale-95'
+                        : 'bg-gradient-to-br from-purple-700 to-purple-900 text-pink-200 border border-pink-400/50 hover:brightness-110'}
+                  `}
+                >
+                  <span className={`
+                    font-bold drop-shadow-md
+                    ${cell.number === 0 ? 'text-2xl' : 'text-lg'}
+                  `}>
+                    {cell.number === 0 ? '★' : cell.number}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
         </div>
 
         {/* 履歴 */}
-        <div className="bg-white rounded-lg shadow-xl p-6">
-          <h3 className="text-xl font-bold text-gray-800 mb-4">抽選履歴</h3>
+        <div className="bg-white/20 backdrop-blur-md rounded-lg shadow-xl p-4 border border-white/30">
+          <h3 className="text-lg font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-200 to-yellow-400 mb-3">抽選履歴</h3>
           <div className="flex flex-wrap gap-2">
             {state.drawnNumbers && state.drawnNumbers.length > 0 ? (
               state.drawnNumbers.map(num => (
                 <span
                   key={num}
                   className={`
-                    px-3 py-1 rounded-full text-sm font-medium
-                    ${num === state.currentNumber ? 'bg-yellow-400 text-gray-800' : 'bg-gray-200 text-gray-700'}
+                    px-2 py-1 rounded-full text-xs font-medium
+                    ${num === state.currentNumber 
+                      ? 'bg-gradient-to-r from-yellow-300 to-yellow-500 text-purple-800' 
+                      : 'bg-white/30 text-white'}
                   `}
                 >
                   {getBingoLetter(num)}-{num}
                 </span>
               ))
             ) : (
-              <p className="text-gray-500">まだ番号が引かれていません</p>
+              <p className="text-white/70 text-sm">まだ番号が引かれていません</p>
             )}
           </div>
         </div>
