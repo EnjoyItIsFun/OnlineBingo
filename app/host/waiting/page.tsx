@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Users, Copy, CheckCircle, Wifi, WifiOff, AlertCircle, RefreshCw } from 'lucide-react';
+import { Users, Copy, CheckCircle, Wifi, WifiOff, AlertCircle, RefreshCw, MoreVertical } from 'lucide-react';
 import QRCode from 'qrcode';
 import { getClientBaseUrl, createParticipationUrl } from '@/utils/url';
 import { usePusherConnection } from '@/hooks/usePusherConnection';
@@ -43,6 +43,9 @@ function WaitingContent() {
   const [copied, setCopied] = useState<'sessionId' | 'accessToken' | 'url' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
+  
+  // 退出メニューの状態管理
+  const [menuState, setMenuState] = useState<'closed' | 'open' | 'confirming'>('closed');
 
   // パラメータの初期化とLocalStorage管理
   useEffect(() => {
@@ -298,59 +301,75 @@ function WaitingContent() {
     }
   };
 
-const handleStartGame = async () => {
-  if (!sessionInfo || players.length < 2) return;  // ホスト以外に1人以上必要
-  
-  console.log('ゲーム開始処理を実行');
-  setError(null);  // エラーをクリア
-  
-  try {
-    // 1. Pusher APIを使用してゲーム開始イベントを確実に送信
-    const triggerResponse = await fetch('/api/pusher/trigger', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        sessionId: sessionInfo.sessionId,
-        accessToken: sessionInfo.accessToken,
-        playerId: sessionInfo.hostId,
-        eventName: 'start_game',
-        data: {
+  const handleStartGame = async () => {
+    if (!sessionInfo || players.length < 2) return;  // ホスト以外に1人以上必要
+    
+    console.log('ゲーム開始処理を実行');
+    setError(null);  // エラーをクリア
+    
+    try {
+      // 1. Pusher APIを使用してゲーム開始イベントを確実に送信
+      const triggerResponse = await fetch('/api/pusher/trigger', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
           sessionId: sessionInfo.sessionId,
-          startedAt: new Date().toISOString()
-        }
-      })
-    });
+          accessToken: sessionInfo.accessToken,
+          playerId: sessionInfo.hostId,
+          eventName: 'start_game',
+          data: {
+            sessionId: sessionInfo.sessionId,
+            startedAt: new Date().toISOString()
+          }
+        })
+      });
 
-    if (!triggerResponse.ok) {
-      const errorData = await triggerResponse.json();
-      throw new Error(errorData.error || 'ゲーム開始イベントの送信に失敗しました');
+      if (!triggerResponse.ok) {
+        const errorData = await triggerResponse.json();
+        throw new Error(errorData.error || 'ゲーム開始イベントの送信に失敗しました');
+      }
+
+      console.log('start_gameイベント送信完了（Pusher API経由）');
+      
+      // 2. 既存のemitも念のため実行
+      await emit('start_game', { sessionId: sessionInfo.sessionId });
+      
+      // 3. ゲーム画面へ遷移（パラメータ名を修正: accessToken → token）
+      setTimeout(() => {
+        const gameUrl = `/host/game/${sessionInfo.sessionId}?token=${sessionInfo.accessToken}&hostId=${sessionInfo.hostId}`;
+        console.log('ゲーム画面へ遷移:', gameUrl);
+        router.push(gameUrl);
+      }, 500);
+      
+    } catch (error) {
+      console.error('ゲーム開始エラー:', error);
+      setError(error instanceof Error ? error.message : 'ゲームの開始に失敗しました');
     }
+  };
 
-    console.log('start_gameイベント送信完了（Pusher API経由）');
-    
-    // 2. 既存のemitも念のため実行
-    await emit('start_game', { sessionId: sessionInfo.sessionId });
-    
-    // 3. ゲーム画面へ遷移（パラメータ名を修正: accessToken → token）
-    setTimeout(() => {
-      const gameUrl = `/host/game/${sessionInfo.sessionId}?token=${sessionInfo.accessToken}&hostId=${sessionInfo.hostId}`;
-      console.log('ゲーム画面へ遷移:', gameUrl);
-      router.push(gameUrl);
-    }, 500);
-    
-  } catch (error) {
-    console.error('ゲーム開始エラー:', error);
-    setError(error instanceof Error ? error.message : 'ゲームの開始に失敗しました');
-  }
-};
+  // handleRetryはそのまま残す
+  const handleRetry = () => {
+    console.log('再試行を実行');
+    window.location.reload();
+  };
 
-// handleRetryはそのまま残す
-const handleRetry = () => {
-  console.log('再試行を実行');
-  window.location.reload();
-};
+  // 退出処理
+  const handleExitGame = () => {
+    // LocalStorageをクリア
+    localStorage.removeItem('hostSession');
+    localStorage.removeItem('lastSessionId');
+    localStorage.removeItem('lastAccessToken');
+    localStorage.removeItem('lastHostId');
+    localStorage.removeItem('reconnectionData');
+    if (sessionId) {
+      localStorage.removeItem(`session_${sessionId}`);
+    }
+    
+    // トップページへ遷移
+    router.push('/');
+  };
 
   // 初期化中の表示
   if (isInitializing) {
@@ -429,8 +448,70 @@ const handleRetry = () => {
 
         <div className="grid lg:grid-cols-2 gap-6">
           {/* 左側: QRコードと参加情報 */}
-          <div className="bg-white/10 backdrop-blur-md rounded-2xl p-6 space-y-6 border border-white/20 shadow-xl">
-            <h2 className="text-2xl font-bold text-white mb-4">📱 参加用QRコード</h2>
+          <div className="bg-white/10 backdrop-blur-md rounded-2xl p-6 space-y-6 border border-white/20 shadow-xl relative">
+            {/* ヘッダーと三点メニュー */}
+            <div className="flex justify-between items-start">
+              <h2 className="text-2xl font-bold text-white">📱 参加用QRコード</h2>
+              
+              {/* 三点メニュー */}
+              <div className="relative">
+                <button
+                  onClick={() => setMenuState(menuState === 'closed' ? 'open' : 'closed')}
+                  className="p-2 hover:bg-white/20 rounded-lg transition-colors"
+                  aria-label="メニュー"
+                >
+                  <MoreVertical className="w-6 h-6 text-white" />
+                </button>
+                
+                {/* ドロップダウンメニュー */}
+                {menuState === 'open' && (
+                  <div className="absolute right-0 mt-2 w-48 bg-red-900 rounded-lg shadow-lg z-50 overflow-hidden">
+                    <button
+                      onClick={() => setMenuState('confirming')}
+                      className="w-full px-4 py-3 text-left text-white hover:bg-red-800 transition-colors"
+                    >
+                      大会をキャンセル
+                    </button>
+                  </div>
+                )}
+                
+                {/* 確認メニュー */}
+                {menuState === 'confirming' && (
+                  <div className="absolute right-0 mt-2 w-56 bg-red-900 rounded-lg shadow-lg z-50 overflow-hidden">
+                    <div className="px-4 py-3 border-b border-red-700">
+                      <p className="text-red-300 text-sm font-medium">
+                        本当にキャンセルしますか？
+                      </p>
+                      <p className="text-red-400/70 text-xs mt-1">
+                        参加者全員が退出されます
+                      </p>
+                    </div>
+                    <div className="flex">
+                      <button
+                        onClick={() => setMenuState('closed')}
+                        className="flex-1 px-4 py-3 text-white/70 hover:bg-red-800 transition-colors text-sm"
+                      >
+                        戻る
+                      </button>
+                      <button
+                        onClick={handleExitGame}
+                        className="flex-1 px-4 py-3 text-red-300 hover:bg-red-800 transition-colors text-sm font-medium"
+                      >
+                        キャンセル
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            {/* メニュー外クリックで閉じる */}
+            {menuState !== 'closed' && (
+              <div 
+                className="fixed inset-0 z-40" 
+                onClick={() => setMenuState('closed')}
+              />
+            )}
             
             {/* QRコード */}
             <div className="flex justify-center mb-6">
