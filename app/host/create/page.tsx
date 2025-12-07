@@ -149,10 +149,10 @@ export default function CreateGamePage() {
               />
             </div>
 
-            {/* 参加人数入力 */}
+            {/* 最大参加人数入力 */}
             <div className="space-y-2">
               <label htmlFor="maxPlayers" className="block text-lg font-medium text-white drop-shadow-sm">
-                参加人数
+                最大参加人数
               </label>
               <input
                 type="number"
