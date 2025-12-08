@@ -20,9 +20,9 @@ export async function POST(
   context: { params: Promise<{ sessionId: string }> }
 ) {
   try {
-    // パラメータ取得（Next.js 15の新しい方式）
     const params = await context.params;
     const { sessionId } = params;
+
     const body = await request.json();
     const { hostId, accessToken } = body;
 
@@ -68,19 +68,16 @@ export async function POST(
       bingoAchievedAt: undefined,
     }));
 
-    // セッションをリセット
+    // セッションをリセット（statusは'playing'を維持）
     const updateResult = await db.collection<GameSession>('sessions').updateOne(
       { sessionId },
       { 
         $set: { 
-          status: 'waiting' as const,
+          status: 'playing' as const,
           numbers: [],
           currentNumber: null,
           players: resetPlayers,
           updatedAt: new Date()
-        },
-        $unset: {
-          startedAt: 1,
         }
       }
     );

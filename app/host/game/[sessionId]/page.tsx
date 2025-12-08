@@ -339,7 +339,7 @@ export default function HostGamePage({ params, searchParams }: HostGamePageProps
         remainingNumbers: allNumbers,
         session: prev.session ? {
           ...prev.session,
-          status: 'waiting',
+          status: 'playing',
           numbers: [],
           currentNumber: null,
           players: prev.session.players.map(p => ({ ...p, bingoCount: 0 }))
