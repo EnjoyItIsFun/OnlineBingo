@@ -1,4 +1,4 @@
-// app/host/game/[sessionId]/page.tsx - 最終修正版（型エラー完全解消）
+// app/host/game/[sessionId]/page.tsx - 確認モーダル追加版
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
@@ -113,6 +113,79 @@ const PlayerCard: React.FC<PlayerCardProps> = ({ player, rank }) => {
   );
 };
 
+// 確認モーダルコンポーネント
+interface ConfirmModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  title: string;
+  message: string;
+  confirmText: string;
+  confirmColor: 'red' | 'orange';
+}
+
+const ConfirmModal: React.FC<ConfirmModalProps> = ({
+  isOpen,
+  onClose,
+  onConfirm,
+  title,
+  message,
+  confirmText,
+  confirmColor
+}) => {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      {/* オーバーレイ */}
+      <div 
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      
+      {/* モーダル本体 */}
+      <div className="relative bg-white rounded-2xl shadow-2xl p-6 m-4 max-w-sm w-full">
+        {/* 閉じるボタン */}
+        <button
+          onClick={onClose}
+          className="absolute top-3 right-3 text-gray-400 hover:text-gray-600 transition-colors"
+        >
+          <XCircle className="w-6 h-6" />
+        </button>
+        
+        {/* タイトル */}
+        <h3 className="text-xl font-bold text-gray-800 mb-2 pr-8">{title}</h3>
+        
+        {/* メッセージ */}
+        <p className="text-gray-600 mb-6">{message}</p>
+        
+        {/* ボタン */}
+        <div className="flex gap-3">
+          <button
+            onClick={onClose}
+            className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium"
+          >
+            キャンセル
+          </button>
+          <button
+            onClick={() => {
+              onConfirm();
+              onClose();
+            }}
+            className={`flex-1 px-4 py-2 text-white rounded-lg transition-colors font-medium ${
+              confirmColor === 'red' 
+                ? 'bg-red-500 hover:bg-red-600' 
+                : 'bg-orange-500 hover:bg-orange-600'
+            }`}
+          >
+            {confirmText}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // Next.js 15対応のためのパラメータ解決
 interface HostGamePageProps {
   params: Promise<{ sessionId: string }>;
@@ -154,6 +227,10 @@ export default function HostGamePage({ params, searchParams }: HostGamePageProps
 
   // タイマー用の状態
   const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
+
+  // モーダル表示用の状態
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [showEndModal, setShowEndModal] = useState(false);
 
   // Promise形式のパラメータを解決
   useEffect(() => {
@@ -420,14 +497,14 @@ export default function HostGamePage({ params, searchParams }: HostGamePageProps
             
             <div className="flex gap-2">
               <button
-                onClick={handleResetGame}
+                onClick={() => setShowResetModal(true)}
                 className="px-3 py-2 bg-white/20 backdrop-blur-sm text-white rounded-lg hover:bg-white/30 transition-all flex items-center gap-1 border border-white/30"
               >
                 <RefreshCw className="w-5 h-5" />
                 <span className="hidden sm:inline text-sm">リセット</span>
               </button>
               <button
-                onClick={handleEndGame}
+                onClick={() => setShowEndModal(true)}
                 className="px-3 py-2 bg-red-500/80 backdrop-blur-sm text-white rounded-lg hover:bg-red-600/80 transition-all flex items-center gap-1"
               >
                 <XCircle className="w-5 h-5" />
@@ -518,6 +595,27 @@ export default function HostGamePage({ params, searchParams }: HostGamePageProps
           </div>
         </div>
       </div>
+
+      {/* 確認モーダル */}
+      <ConfirmModal
+        isOpen={showResetModal}
+        onClose={() => setShowResetModal(false)}
+        onConfirm={handleResetGame}
+        title="ゲームをリセット"
+        message="抽選済みの番号とビンゴカードがすべてリセットされます。よろしいですか？"
+        confirmText="リセットする"
+        confirmColor="orange"
+      />
+      
+      <ConfirmModal
+        isOpen={showEndModal}
+        onClose={() => setShowEndModal(false)}
+        onConfirm={handleEndGame}
+        title="ゲームを終了"
+        message="ゲームを終了して結果画面に移動します。よろしいですか？"
+        confirmText="終了する"
+        confirmColor="red"
+      />
     </div>
   );
 }
