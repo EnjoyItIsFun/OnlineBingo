@@ -1,4 +1,4 @@
-// app/host/game/[sessionId]/page.tsx - 確認モーダル追加版
+// app/host/game/[sessionId]/page.tsx - ランキング順序修正版
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
@@ -87,6 +87,11 @@ const PlayerCard: React.FC<PlayerCardProps> = ({ player, rank }) => {
                 rank === 2 ? 'bg-gray-300 text-gray-700' : 
                 'bg-orange-400 text-orange-900'}
             `}>
+              {rank}
+            </div>
+          )}
+          {rank && rank > 3 && (
+            <div className="w-8 h-8 rounded-full mr-2 flex items-center justify-center font-bold bg-white/30 text-white">
               {rank}
             </div>
           )}
@@ -327,7 +332,9 @@ export default function HostGamePage({ params, searchParams }: HostGamePageProps
         session: prev.session ? {
           ...prev.session,
           players: prev.session.players.map(p =>
-            p.id === data.player.id ? { ...p, bingoCount: data.bingoCount } : p
+            p.id === data.player.id 
+              ? { ...p, bingoCount: data.bingoCount, bingoAchievedAt: data.achievedAt || new Date().toISOString() } 
+              : p
           )
         } : null
       }));
@@ -419,7 +426,7 @@ export default function HostGamePage({ params, searchParams }: HostGamePageProps
           status: 'playing',
           numbers: [],
           currentNumber: null,
-          players: prev.session.players.map(p => ({ ...p, bingoCount: 0 }))
+          players: prev.session.players.map(p => ({ ...p, bingoCount: 0, bingoAchievedAt: undefined }))
         } : null
       }));
     } catch {
@@ -470,8 +477,16 @@ export default function HostGamePage({ params, searchParams }: HostGamePageProps
     );
   }
 
-  const sortedPlayers = [...(state.session?.players || [])]
-    .sort((a, b) => b.bingoCount - a.bingoCount);
+  // ランキング: ビンゴ達成者を最初にビンゴした順にソート
+  const rankedPlayers = [...(state.session?.players || [])]
+    .filter(p => p.bingoCount > 0 && p.bingoAchievedAt)
+    .sort((a, b) => 
+      new Date(a.bingoAchievedAt!).getTime() - new Date(b.bingoAchievedAt!).getTime()
+    );
+
+  // 未ビンゴのプレイヤー
+  const unrankedPlayers = [...(state.session?.players || [])]
+    .filter(p => !p.bingoCount || p.bingoCount === 0);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-pink-500 via-purple-500 to-indigo-600 p-4">
@@ -571,24 +586,44 @@ export default function HostGamePage({ params, searchParams }: HostGamePageProps
             </div>
           </div>
 
-          {/* サイドバー（参加者リスト） */}
+          {/* サイドバー（ランキング） */}
           <div className="space-y-6">
             <div className="bg-white/10 backdrop-blur-md rounded-2xl shadow-2xl p-6 border border-white/20">
               <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
                 <Crown className="w-5 h-5 text-yellow-400" />
-                ランキング
+                ビンゴ達成者
               </h3>
               <div className="space-y-3">
-                {sortedPlayers.length > 0 ? (
-                  sortedPlayers.map((player, index) => (
+                {rankedPlayers.length > 0 ? (
+                  rankedPlayers.map((player, index) => (
                     <PlayerCard
                       key={player.id}
                       player={player}
-                      rank={player.bingoCount > 0 ? index + 1 : undefined}
+                      rank={index + 1}
                     />
                   ))
                 ) : (
-                  <p className="text-white/60 text-center py-4">参加者がいません</p>
+                  <p className="text-white/60 text-center py-4">まだビンゴ達成者はいません</p>
+                )}
+              </div>
+            </div>
+
+            {/* 参加者一覧 */}
+            <div className="bg-white/10 backdrop-blur-md rounded-2xl shadow-2xl p-6 border border-white/20">
+              <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                <Users className="w-5 h-5" />
+                参加者 ({unrankedPlayers.length}名)
+              </h3>
+              <div className="space-y-3">
+                {unrankedPlayers.length > 0 ? (
+                  unrankedPlayers.map(player => (
+                    <PlayerCard
+                      key={player.id}
+                      player={player}
+                    />
+                  ))
+                ) : (
+                  <p className="text-white/60 text-center py-4">全員ビンゴ達成！</p>
                 )}
               </div>
             </div>
@@ -602,7 +637,7 @@ export default function HostGamePage({ params, searchParams }: HostGamePageProps
         onClose={() => setShowResetModal(false)}
         onConfirm={handleResetGame}
         title="ゲームをリセット"
-        message="抽選済みの番号とビンゴカードがすべてリセットされます。よろしいですか？"
+        message="抽選済みの番号とビンゴカードがすべてリセットされます。この操作は取り消せません。"
         confirmText="リセットする"
         confirmColor="orange"
       />
