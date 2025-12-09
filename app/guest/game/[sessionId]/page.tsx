@@ -4,6 +4,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { usePusherConnection } from '@/hooks/usePusherConnection';
+import { Trophy, Crown, Users } from 'lucide-react';
 import {
   BingoCell,
   Player,
@@ -72,6 +73,37 @@ const checkBingo = (board: BingoCell[][]): BingoCheckResult => {
   return { count, lines, newBingo: false };
 };
 
+// ランキング用プレイヤーカードコンポーネント
+interface RankingPlayerCardProps {
+  player: Player;
+  rank: number;
+  isCurrentPlayer: boolean;
+}
+
+const RankingPlayerCard: React.FC<RankingPlayerCardProps> = ({ player, rank, isCurrentPlayer }) => {
+  return (
+    <div className={`flex items-center gap-2 p-2 rounded-lg ${isCurrentPlayer ? 'bg-yellow-400/30 border border-yellow-400/50' : 'bg-white/10'}`}>
+      <div className={`
+        w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold
+        ${rank === 1 ? 'bg-yellow-400 text-yellow-900' : 
+          rank === 2 ? 'bg-gray-300 text-gray-700' : 
+          rank === 3 ? 'bg-orange-400 text-orange-900' :
+          'bg-white/30 text-white'}
+      `}>
+        {rank}
+      </div>
+      <span className={`text-sm truncate flex-1 ${isCurrentPlayer ? 'text-yellow-300 font-bold' : 'text-white'}`}>
+        {player.name}
+        {isCurrentPlayer && ' (あなた)'}
+      </span>
+      <div className="flex items-center gap-1 text-yellow-300 text-xs">
+        <Trophy className="w-3 h-3" />
+        <span>{player.bingoCount}</span>
+      </div>
+    </div>
+  );
+};
+
 export default function GuestGamePage({ params, searchParams }: GuestGamePageProps) {
   const router = useRouter();
   
@@ -94,6 +126,9 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
   
   // メニュー状態: 'closed' | 'open' | 'confirming'
   const [menuState, setMenuState] = useState<'closed' | 'open' | 'confirming'>('closed');
+
+  // ランキング表示/非表示
+  const [showRanking, setShowRanking] = useState(false);
 
   // Pusher接続
   const { isConnected, on, off, emit } = usePusherConnection(resolvedParams?.sessionId || null);
@@ -350,6 +385,13 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
     }
   }, [state.showBingoAnimation]);
 
+  // ランキング計算: ビンゴ達成者を最初にビンゴした順にソート
+  const rankedPlayers = [...(state.session?.players || [])]
+    .filter(p => p.bingoCount > 0 && p.bingoAchievedAt)
+    .sort((a, b) => 
+      new Date(a.bingoAchievedAt!).getTime() - new Date(b.bingoAchievedAt!).getTime()
+    );
+
   if (state.loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-600 to-pink-600">
@@ -503,6 +545,50 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
                 </div>
               ))
             )}
+          </div>
+        </div>
+
+        {/* ランキングセクション */}
+        <div className="bg-white/20 backdrop-blur-md rounded-lg shadow-xl p-4 mb-4 border border-white/30">
+          <button
+            onClick={() => setShowRanking(!showRanking)}
+            className="w-full flex items-center justify-between text-left"
+          >
+            <h3 className="text-lg font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-200 to-yellow-400 flex items-center gap-2">
+              <Crown className="w-5 h-5 text-yellow-400" />
+              ビンゴ達成者
+              {rankedPlayers.length > 0 && (
+                <span className="text-sm text-yellow-300">({rankedPlayers.length}名)</span>
+              )}
+            </h3>
+            <span className="text-white/70 text-sm">
+              {showRanking ? '▲ 閉じる' : '▼ 開く'}
+            </span>
+          </button>
+          
+          {showRanking && (
+            <div className="mt-3 space-y-2">
+              {rankedPlayers.length > 0 ? (
+                rankedPlayers.map((player, index) => (
+                  <RankingPlayerCard
+                    key={player.id}
+                    player={player}
+                    rank={index + 1}
+                    isCurrentPlayer={player.id === resolvedSearchParams?.playerId}
+                  />
+                ))
+              ) : (
+                <p className="text-white/60 text-center py-2 text-sm">まだビンゴ達成者はいません</p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* 参加者数表示 */}
+        <div className="bg-white/20 backdrop-blur-md rounded-lg shadow-xl p-3 mb-4 border border-white/30">
+          <div className="flex items-center justify-center gap-2 text-white/80">
+            <Users className="w-4 h-4" />
+            <span className="text-sm">{state.session?.players.length || 0}名が参加中</span>
           </div>
         </div>
 
