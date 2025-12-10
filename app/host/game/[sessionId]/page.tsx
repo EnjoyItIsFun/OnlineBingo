@@ -304,6 +304,8 @@ export default function HostGamePage({ params, searchParams }: HostGamePageProps
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const pendingNotificationsRef = useRef<{ type: 'bingo' | 'reach'; playerName: string }[]>([]);
   const notificationTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const notifiedBingoPlayersRef = useRef<Set<string>>(new Set());
+  const notifiedReachPlayersRef = useRef<Set<string>>(new Set());
 
   // Promise形式のパラメータを解決
   useEffect(() => {
@@ -427,6 +429,15 @@ export default function HostGamePage({ params, searchParams }: HostGamePageProps
             .filter(n => !(data.numbers || []).includes(n)),
           isLoading: false
         }));
+
+        // 既にビンゴ達成しているプレイヤーを通知済みとしてマーク
+        if (data.players) {
+          data.players.forEach((player: Player) => {
+            if (player.bingoCount > 0) {
+              notifiedBingoPlayersRef.current.add(player.id);
+            }
+          });
+        }
       } catch (error) {
         setState(prev => ({
           ...prev,
@@ -454,9 +465,14 @@ export default function HostGamePage({ params, searchParams }: HostGamePageProps
     };
 
     const handlePlayerBingo = (data: PlayerBingoEventData) => {
-      // 通知を追加
+      const playerId = data.player?.id;
       const playerName = data.player?.name || '不明';
-      addNotification('bingo', playerName);
+
+      // 初めてビンゴ通知するプレイヤーのみ通知
+      if (playerId && !notifiedBingoPlayersRef.current.has(playerId)) {
+        notifiedBingoPlayersRef.current.add(playerId);
+        addNotification('bingo', playerName);
+      }
 
       setState(prev => ({
         ...prev,
@@ -472,8 +488,13 @@ export default function HostGamePage({ params, searchParams }: HostGamePageProps
     };
 
     const handlePlayerReach = (data: PlayerReachEventData) => {
-      // 通知を追加
-      addNotification('reach', data.playerName);
+      const playerId = data.playerId;
+
+      // 初めてリーチ通知するプレイヤーのみ通知
+      if (playerId && !notifiedReachPlayersRef.current.has(playerId)) {
+        notifiedReachPlayersRef.current.add(playerId);
+        addNotification('reach', data.playerName);
+      }
     };
 
     const handleSessionUpdated = (data: SessionUpdatedEventData) => {
@@ -553,8 +574,10 @@ export default function HostGamePage({ params, searchParams }: HostGamePageProps
         throw new Error('ゲームリセットに失敗しました');
       }
 
-      // 通知もクリア
+      // 通知と通知済みプレイヤーをクリア
       setNotifications([]);
+      notifiedBingoPlayersRef.current.clear();
+      notifiedReachPlayersRef.current.clear();
 
       const allNumbers = Array.from({ length: 75 }, (_, i) => i + 1);
       setState(prev => ({
