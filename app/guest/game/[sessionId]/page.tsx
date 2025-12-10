@@ -117,8 +117,8 @@ const RankingPlayerCard: React.FC<RankingPlayerCardProps> = ({ player, rank, isC
 export default function GuestGamePage({ params, searchParams }: GuestGamePageProps) {
   const router = useRouter();
   
-  // 状態管理（drawnNumbersを内部で管理）
-  const [state, setState] = useState<GuestGameState & { drawnNumbers: number[] }>({
+  // 状態管理（drawnNumbersとisExpiredを内部で管理）
+  const [state, setState] = useState<GuestGameState & { drawnNumbers: number[]; isExpired: boolean }>({
     session: null,
     board: [],
     currentNumber: null,
@@ -128,7 +128,8 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
     showBingoAnimation: false,
     loading: true,
     error: null,
-    playerName: ''
+    playerName: '',
+    isExpired: false
   });
 
   // リーチ・ビンゴ状態の管理
@@ -180,6 +181,17 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
             'Authorization': `Bearer ${resolvedSearchParams.token}`
           }
         });
+
+        // 404チェック（期限切れ判定）
+        if (sessionRes.status === 404) {
+          setState(prev => ({
+            ...prev,
+            error: 'セッションが見つかりません。制限時間（2時間）が経過してデータが削除された可能性があります。',
+            loading: false,
+            isExpired: true
+          }));
+          return;
+        }
 
         if (!sessionRes.ok) {
           throw new Error('セッションの取得に失敗しました');
@@ -244,7 +256,8 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
           drawnNumbers: drawnNumbers,
           currentNumber: sessionData.currentNumber || null,
           loading: false,
-          error: null
+          error: null,
+          isExpired: false
         }));
 
         // 初回のビンゴ・リーチチェック
@@ -269,7 +282,8 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
         setState(prev => ({
           ...prev,
           error: error instanceof Error ? error.message : 'エラーが発生しました',
-          loading: false
+          loading: false,
+          isExpired: false
         }));
       }
     };
@@ -465,13 +479,23 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
   if (state.error) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-600 to-pink-600">
-        <div className="bg-white/20 backdrop-blur-md rounded-lg p-8 border border-white/30">
-          <p className="text-white text-xl mb-4">エラー: {state.error}</p>
+        <div className="bg-white/20 backdrop-blur-md rounded-lg p-8 border border-white/30 max-w-md mx-4">
+          {state.isExpired ? (
+            <>
+              <div className="text-5xl text-center mb-4">⏰</div>
+              <h2 className="text-xl font-bold text-white text-center mb-2">セッション期限切れ</h2>
+              <p className="text-white/80 text-center mb-6">
+                制限時間（2時間）が経過したため、ゲームデータが削除されました。
+              </p>
+            </>
+          ) : (
+            <p className="text-white text-xl mb-4 text-center">エラー: {state.error}</p>
+          )}
           <button
-            onClick={() => router.push('/guest/join')}
-            className="px-6 py-3 bg-white/20 text-white rounded-lg hover:bg-white/30 transition-colors border border-white/30"
+            onClick={() => router.push('/')}
+            className="w-full px-6 py-3 bg-white/20 text-white rounded-lg hover:bg-white/30 transition-colors border border-white/30 font-semibold"
           >
-            参加画面へ戻る
+            トップページへ戻る
           </button>
         </div>
       </div>
@@ -669,7 +693,6 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
             <span className="text-sm">{state.session?.players.length || 0}名が参加中</span>
           </div>
         </div>
-
         {/* 履歴 */}
         <div className="bg-white/20 backdrop-blur-md rounded-lg shadow-xl p-4 border border-white/30">
           <h3 className="text-lg font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-200 to-yellow-400 mb-3">抽選履歴</h3>
@@ -689,7 +712,7 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
                 </span>
               ))
             ) : (
-                <p className="text-white/70 text-sm">まだ番号が引かれていません</p>
+              <p className="text-white/70 text-sm">まだ番号が引かれていません</p>
             )}
           </div>
         </div>

@@ -281,8 +281,8 @@ export default function HostGamePage({ params, searchParams }: HostGamePageProps
   const [accessToken, setAccessToken] = useState<string>('');
   const [hostId, setHostId] = useState<string>('');
   
-  // 状態管理
-  const [state, setState] = useState<HostGameState>({
+  // 状態管理（isExpiredを追加）
+  const [state, setState] = useState<HostGameState & { isExpired: boolean }>({
     session: null,
     drawnNumbers: [],
     currentNumber: null,
@@ -290,7 +290,8 @@ export default function HostGamePage({ params, searchParams }: HostGamePageProps
     isDrawing: false,
     isLoading: true,
     error: null,
-    isConfirmingEnd: false
+    isConfirmingEnd: false,
+    isExpired: false
   });
 
   // タイマー用の状態
@@ -417,7 +418,8 @@ export default function HostGamePage({ params, searchParams }: HostGamePageProps
           currentNumber: data.currentNumber,
           remainingNumbers: Array.from({ length: 75 }, (_, i) => i + 1)
             .filter(n => !(data.numbers || []).includes(n)),
-          isLoading: false
+          isLoading: false,
+          isExpired: false
         }));
 
         // 既にビンゴ達成しているプレイヤーを通知済みとしてマーク
@@ -429,10 +431,19 @@ export default function HostGamePage({ params, searchParams }: HostGamePageProps
           });
         }
       } catch (error) {
+        // 404エラーの場合は期限切れと判定
+        const errorMessage = normalizeErrorMessage(error);
+        const isExpired = errorMessage.includes('404') || 
+                          errorMessage.includes('見つかりません') ||
+                          errorMessage.includes('not found');
+        
         setState(prev => ({
           ...prev,
-          error: normalizeErrorMessage(error),
-          isLoading: false
+          error: isExpired 
+            ? 'セッションが見つかりません。制限時間（2時間）が経過してデータが削除された可能性があります。'
+            : errorMessage,
+          isLoading: false,
+          isExpired
         }));
       }
     };
@@ -617,14 +628,26 @@ export default function HostGamePage({ params, searchParams }: HostGamePageProps
   if (state.error) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-pink-500 via-purple-500 to-indigo-600">
-        <div className="bg-white rounded-xl shadow-2xl p-8">
-          <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-          <p className="text-red-600 text-xl mb-4">{state.error}</p>
+        <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md mx-4">
+          {state.isExpired ? (
+            <>
+              <Timer className="w-12 h-12 text-orange-500 mx-auto mb-4" />
+              <h2 className="text-xl font-bold text-gray-800 text-center mb-2">セッション期限切れ</h2>
+              <p className="text-gray-600 text-center mb-6">
+                制限時間（2時間）が経過したため、ゲームデータが削除されました。
+              </p>
+            </>
+          ) : (
+            <>
+              <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+              <p className="text-red-600 text-xl mb-4 text-center">{state.error}</p>
+            </>
+          )}
           <button
             onClick={() => router.push('/')}
             className="w-full px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg font-semibold hover:opacity-90 transition-all"
           >
-            ホーム画面へ戻る
+            トップページへ戻る
           </button>
         </div>
       </div>
