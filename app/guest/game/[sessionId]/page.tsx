@@ -135,7 +135,7 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
   const [reachCount, setReachCount] = useState(0);
   const [showReachAnimation, setShowReachAnimation] = useState(false);
   const hasReachedRef = useRef(false); // 初めてリーチになったかを追跡
-  const hasBingodRef = useRef(false);  // 初めてビンゴになったかを追跡
+  const hasBingodRef = useRef(false);  // 初めてビンゴになったかを追跡（演出用）
 
   const [resolvedParams, setResolvedParams] = useState<{ sessionId: string } | null>(null);
   const [resolvedSearchParams, setResolvedSearchParams] = useState<{ playerId?: string; token?: string }| null>(null);
@@ -299,12 +299,17 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
         );
 
         const result = checkBingoAndReach(newBoard);
-        const newBingo = !hasBingodRef.current && result.count > 0;
+        const isFirstBingo = !hasBingodRef.current && result.count > 0;
         const newReach = !hasReachedRef.current && result.reachCount > 0;
 
-        // ビンゴ達成時の処理（初めてビンゴになった時のみ）
-        if (newBingo && resolvedSearchParams?.playerId) {
-          hasBingodRef.current = true;
+        // ビンゴ達成時の処理
+        if (result.count > 0 && resolvedSearchParams?.playerId) {
+          // 初回フラグを更新（演出制御用）
+          if (isFirstBingo) {
+            hasBingodRef.current = true;
+          }
+          
+          // イベントは毎回送信（bingoCount更新のため）
           emit('bingo_achieved', {
             sessionId: resolvedParams?.sessionId || '',
             playerId: resolvedSearchParams.playerId,
@@ -336,7 +341,7 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
           drawnNumbers: [...prev.drawnNumbers, data.number],
           bingoLines: result.lines,
           bingoCount: result.count,
-          showBingoAnimation: newBingo
+          showBingoAnimation: isFirstBingo  // 演出は初回のみ
         };
       });
     };
@@ -684,7 +689,7 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
                 </span>
               ))
             ) : (
-              <p className="text-white/70 text-sm">まだ番号が引かれていません</p>
+                <p className="text-white/70 text-sm">まだ番号が引かれていません</p>
             )}
           </div>
         </div>
