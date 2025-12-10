@@ -648,9 +648,8 @@ export default function HostGamePage({ params, searchParams }: HostGamePageProps
       new Date(a.bingoAchievedAt!).getTime() - new Date(b.bingoAchievedAt!).getTime()
     );
 
-  // 未ビンゴのプレイヤー
-  const unrankedPlayers = [...(state.session?.players || [])]
-    .filter(p => !p.bingoCount || p.bingoCount === 0);
+  // 全参加者リスト
+  const allPlayers = state.session?.players || [];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-pink-500 via-purple-500 to-indigo-600 p-4">
@@ -782,18 +781,18 @@ export default function HostGamePage({ params, searchParams }: HostGamePageProps
             <div className="bg-white/10 backdrop-blur-md rounded-2xl shadow-2xl p-6 border border-white/20">
               <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
                 <Users className="w-5 h-5" />
-                参加者 ({unrankedPlayers.length}名)
+                参加者
               </h3>
               <div className="space-y-3">
-                {unrankedPlayers.length > 0 ? (
-                  unrankedPlayers.map(player => (
+                {allPlayers.length > 0 ? (
+                  allPlayers.map(player => (
                     <PlayerCard
                       key={player.id}
                       player={player}
                     />
                   ))
                 ) : (
-                  <p className="text-white/60 text-center py-4">全員ビンゴ達成！</p>
+                  <p className="text-white/60 text-center py-4">参加者がいません</p>
                 )}
               </div>
             </div>
