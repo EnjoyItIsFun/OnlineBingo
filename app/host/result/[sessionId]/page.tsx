@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { 
   Player, 
   GameSession, 
-  GameStatistics,
   HostResultPageProps 
 } from '@/types';
 
@@ -19,27 +18,11 @@ const getMedalIcon = (rank: number): string => {
   }
 };
 
-// ゲーム時間をフォーマット
-const formatDuration = (seconds: number): string => {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = seconds % 60;
-  
-  if (hours > 0) {
-    return `${hours}時間${minutes}分${secs}秒`;
-  } else if (minutes > 0) {
-    return `${minutes}分${secs}秒`;
-  } else {
-    return `${secs}秒`;
-  }
-};
-
 export default function HostResultPage({ params: paramsPromise, searchParams: searchParamsPromise }: HostResultPageProps) {
   const router = useRouter();
   const params = use(paramsPromise);
   const searchParams = use(searchParamsPromise);
   const [session, setSession] = useState<GameSession | null>(null);
-  const [statistics, setStatistics] = useState<GameStatistics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showShareModal, setShowShareModal] = useState(false);
@@ -61,25 +44,6 @@ export default function HostResultPage({ params: paramsPromise, searchParams: se
 
         const data = await res.json();
         setSession(data);
-
-        // 統計情報を計算
-        if (data.startedAt && data.finishedAt) {
-          const duration = Math.floor(
-            (new Date(data.finishedAt).getTime() - new Date(data.startedAt).getTime()) / 1000
-          );
-
-          const playersWithBingo = data.players.filter((p: Player) => p.bingoCount > 0).length;
-          
-          setStatistics({
-            totalNumbers: data.numbers?.length || 0,
-            duration,
-            totalPlayers: data.players.length,
-            completionRate: data.players.length > 0 
-              ? Math.round((playersWithBingo / data.players.length) * 100)
-              : 0
-          });
-        }
-
         setLoading(false);
       } catch (err) {
         setError(err instanceof Error ? err.message : '予期しないエラーが発生しました');
@@ -112,13 +76,6 @@ export default function HostResultPage({ params: paramsPromise, searchParams: se
     ranking.slice(0, 3).forEach((player, index) => {
       text += `${getMedalIcon(index + 1)} ${index + 1}位: ${player.name} (${player.bingoCount}列)\n`;
     });
-
-    if (statistics) {
-      text += `\n📊 ゲーム統計\n`;
-      text += `・参加者: ${statistics.totalPlayers}名\n`;
-      text += `・ゲーム時間: ${formatDuration(statistics.duration)}\n`;
-      text += `・ビンゴ達成率: ${statistics.completionRate}%\n`;
-    }
 
     return text;
   };
@@ -236,52 +193,8 @@ export default function HostResultPage({ params: paramsPromise, searchParams: se
             </div>
           </div>
 
-          {/* 統計情報 */}
-          <div className="lg:col-span-1 space-y-6">
-            {/* ゲーム統計 */}
-            <div className="bg-white/30 backdrop-blur-md rounded-xl p-6 shadow-xl border border-white/20">
-              <h3 className="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-500 mb-4 drop-shadow-md">📊 ゲーム統計</h3>
-              
-              {statistics && (
-                <div className="space-y-4">
-                  <div>
-                    <p className="text-sm text-white/80">参加人数</p>
-                    <p className="text-2xl font-bold text-yellow-300 drop-shadow-md">
-                      {statistics.totalPlayers}名
-                    </p>
-                  </div>
-                  
-                  <div>
-                    <p className="text-sm text-white/80">ゲーム時間</p>
-                    <p className="text-2xl font-bold text-yellow-300 drop-shadow-md">
-                      {formatDuration(statistics.duration)}
-                    </p>
-                  </div>
-                  
-                  <div>
-                    <p className="text-sm text-white/80">引いた番号</p>
-                    <p className="text-2xl font-bold text-yellow-300 drop-shadow-md">
-                      {statistics.totalNumbers} / 75個
-                    </p>
-                  </div>
-                  
-                  <div>
-                    <p className="text-sm text-white/80">ビンゴ達成率</p>
-                    <p className="text-2xl font-bold text-yellow-300 drop-shadow-md">
-                      {statistics.completionRate}%
-                    </p>
-                    <div className="mt-2 bg-white/20 rounded-full h-3">
-                      <div 
-                        className="bg-gradient-to-r from-yellow-400 to-yellow-600 h-3 rounded-full transition-all"
-                        style={{ width: `${statistics.completionRate}%` }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* アクションボタン */}
+          {/* アクション */}
+          <div className="lg:col-span-1">
             <div className="bg-white/30 backdrop-blur-md rounded-xl p-6 shadow-xl border border-white/20">
               <h3 className="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-500 mb-4 drop-shadow-md">🎮 次のアクション</h3>
               
