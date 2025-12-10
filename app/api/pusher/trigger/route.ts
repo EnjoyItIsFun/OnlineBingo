@@ -183,13 +183,16 @@ export async function POST(req: NextRequest) {
 
         const newBingoCount = data.bingoCount || 1;
 
+        // bingoAchievedAtは初回のみ設定（既存の値を保持）
+        const bingoAchievedAt = achievingPlayer.bingoAchievedAt || new Date().toISOString();
+
         // データベースのプレイヤー情報を更新
         await db.collection<GameSession>('sessions').updateOne(
           { sessionId, 'players.id': playerId },
           { 
             $set: { 
               'players.$.bingoCount': newBingoCount,
-              'players.$.bingoAchievedAt': new Date().toISOString()
+              'players.$.bingoAchievedAt': bingoAchievedAt  // 初回のみ更新
             }
           }
         );
@@ -201,7 +204,7 @@ export async function POST(req: NextRequest) {
           },
           bingoCount: newBingoCount,
           lines: data.lines || [],
-          achievedAt: new Date().toISOString()
+          achievedAt: bingoAchievedAt  // 初回の時刻を使用
         };
         
         // player-bingoイベントとして配信
