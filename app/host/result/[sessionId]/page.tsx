@@ -90,20 +90,16 @@ export default function HostResultPage({ params: paramsPromise, searchParams: se
     fetchSession();
   }, [params.sessionId, searchParams.token]);
 
-  // ランキングを作成
+  // ランキングを作成（最初にビンゴした順）
   const getRanking = (): Player[] => {
     if (!session) return [];
     
     return [...session.players]
-      .filter(p => p.bingoCount > 0)
+      .filter(p => p.bingoCount > 0 && p.bingoAchievedAt)
       .sort((a, b) => {
-        // ビンゴ数で降順ソート
-        if (b.bingoCount !== a.bingoCount) {
-          return b.bingoCount - a.bingoCount;
-        }
-        // 同じビンゴ数なら達成時刻で昇順ソート
-        const timeA = a.bingoAchievedAt ? new Date(a.bingoAchievedAt).getTime() : Infinity;
-        const timeB = b.bingoAchievedAt ? new Date(b.bingoAchievedAt).getTime() : Infinity;
+        // 最初にビンゴした順（達成時刻で昇順ソート）
+        const timeA = new Date(a.bingoAchievedAt!).getTime();
+        const timeB = new Date(b.bingoAchievedAt!).getTime();
         return timeA - timeB;
       });
   };
