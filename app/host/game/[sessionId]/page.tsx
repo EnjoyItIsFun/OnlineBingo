@@ -1,7 +1,7 @@
-// app/host/game/[sessionId]/page.tsx - ランキング順序修正版
+// app/host/game/[sessionId]/page.tsx
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { usePusherConnection } from '@/hooks/usePusherConnection';
 import { 
@@ -27,6 +27,22 @@ import {
   AlertCircle,
   XCircle
 } from 'lucide-react';
+
+// 通知の型定義
+interface Notification {
+  id: string;
+  type: 'bingo' | 'reach';
+  playerNames: string[];
+  timestamp: number;
+}
+
+// リーチイベントの型定義
+interface PlayerReachEventData {
+  playerId: string;
+  playerName: string;
+  reachCount: number;
+  reachLines: string[];
+}
 
 // 番号履歴表示コンポーネント
 interface NumberHistoryProps {
@@ -114,6 +130,53 @@ const PlayerCard: React.FC<PlayerCardProps> = ({ player, rank }) => {
           </div>
         )}
       </div>
+    </div>
+  );
+};
+
+// 通知コンポーネント
+interface NotificationDisplayProps {
+  notifications: Notification[];
+  onDismiss: (id: string) => void;
+}
+
+const NotificationDisplay: React.FC<NotificationDisplayProps> = ({ notifications, onDismiss }) => {
+  if (notifications.length === 0) return null;
+
+  return (
+    <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 space-y-2 w-full max-w-md px-4">
+      {notifications.map(notification => (
+        <div
+          key={notification.id}
+          className={`
+            rounded-xl px-6 py-4 shadow-2xl border-2 animate-slide-down
+            flex items-center justify-between gap-4
+            ${notification.type === 'bingo' 
+              ? 'bg-gradient-to-r from-yellow-400 to-orange-500 border-yellow-300' 
+              : 'bg-gradient-to-r from-orange-400 to-pink-500 border-orange-300'}
+          `}
+        >
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">
+              {notification.type === 'bingo' ? '🎉' : '🎯'}
+            </span>
+            <div>
+              <p className="font-bold text-white text-lg">
+                {notification.playerNames.join('、')}さん
+              </p>
+              <p className="text-white/90 text-sm">
+                {notification.type === 'bingo' ? 'ビンゴ達成！' : 'リーチ！'}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => onDismiss(notification.id)}
+            className="text-white/70 hover:text-white transition-colors"
+          >
+            <XCircle className="w-5 h-5" />
+          </button>
+        </div>
+      ))}
     </div>
   );
 };
@@ -237,6 +300,11 @@ export default function HostGamePage({ params, searchParams }: HostGamePageProps
   const [showResetModal, setShowResetModal] = useState(false);
   const [showEndModal, setShowEndModal] = useState(false);
 
+  // 通知用の状態
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const pendingNotificationsRef = useRef<{ type: 'bingo' | 'reach'; playerName: string }[]>([]);
+  const notificationTimerRef = useRef<NodeJS.Timeout | null>(null);
+
   // Promise形式のパラメータを解決
   useEffect(() => {
     Promise.all([params, searchParams]).then(([resolvedParams, resolvedSearchParams]) => {
@@ -283,6 +351,65 @@ export default function HostGamePage({ params, searchParams }: HostGamePageProps
     return '';
   };
 
+  // 通知を追加（バッファリング処理）
+  const addNotification = useCallback((type: 'bingo' | 'reach', playerName: string) => {
+    pendingNotificationsRef.current.push({ type, playerName });
+
+    // 既存のタイマーをクリア
+    if (notificationTimerRef.current) {
+      clearTimeout(notificationTimerRef.current);
+    }
+
+    // 500ms後にまとめて通知を表示
+    notificationTimerRef.current = setTimeout(() => {
+      const pending = pendingNotificationsRef.current;
+      pendingNotificationsRef.current = [];
+
+      // 同じタイプの通知をまとめる
+      const bingoPlayers = pending.filter(p => p.type === 'bingo').map(p => p.playerName);
+      const reachPlayers = pending.filter(p => p.type === 'reach').map(p => p.playerName);
+
+      const newNotifications: Notification[] = [];
+
+      if (bingoPlayers.length > 0) {
+        newNotifications.push({
+          id: `bingo-${Date.now()}`,
+          type: 'bingo',
+          playerNames: bingoPlayers,
+          timestamp: Date.now()
+        });
+      }
+
+      if (reachPlayers.length > 0) {
+        newNotifications.push({
+          id: `reach-${Date.now()}`,
+          type: 'reach',
+          playerNames: reachPlayers,
+          timestamp: Date.now()
+        });
+      }
+
+      setNotifications(prev => [...prev, ...newNotifications]);
+    }, 500);
+  }, []);
+
+  // 通知を削除
+  const dismissNotification = useCallback((id: string) => {
+    setNotifications(prev => prev.filter(n => n.id !== id));
+  }, []);
+
+  // 通知の自動削除（5秒後）
+  useEffect(() => {
+    if (notifications.length === 0) return;
+
+    const timer = setTimeout(() => {
+      const now = Date.now();
+      setNotifications(prev => prev.filter(n => now - n.timestamp < 5000));
+    }, 5000);
+
+    return () => clearTimeout(timer);
+  }, [notifications]);
+
   // 初回ロード
   useEffect(() => {
     if (!sessionId || !accessToken) return;
@@ -327,6 +454,10 @@ export default function HostGamePage({ params, searchParams }: HostGamePageProps
     };
 
     const handlePlayerBingo = (data: PlayerBingoEventData) => {
+      // 通知を追加
+      const playerName = data.player?.name || '不明';
+      addNotification('bingo', playerName);
+
       setState(prev => ({
         ...prev,
         session: prev.session ? {
@@ -340,6 +471,11 @@ export default function HostGamePage({ params, searchParams }: HostGamePageProps
       }));
     };
 
+    const handlePlayerReach = (data: PlayerReachEventData) => {
+      // 通知を追加
+      addNotification('reach', data.playerName);
+    };
+
     const handleSessionUpdated = (data: SessionUpdatedEventData) => {
       setState(prev => ({
         ...prev,
@@ -349,14 +485,16 @@ export default function HostGamePage({ params, searchParams }: HostGamePageProps
 
     on('number-drawn', handleNumberDrawn);
     on('player-bingo', handlePlayerBingo);
+    on('player-reach', handlePlayerReach);
     on('session-updated', handleSessionUpdated);
 
     return () => {
       off('number-drawn', handleNumberDrawn);
       off('player-bingo', handlePlayerBingo);
+      off('player-reach', handlePlayerReach);
       off('session-updated', handleSessionUpdated);
     };
-  }, [isConnected, on, off]);
+  }, [isConnected, on, off, addNotification]);
 
   // 番号を引く
   const handleDrawNumber = useCallback(async () => {
@@ -414,6 +552,9 @@ export default function HostGamePage({ params, searchParams }: HostGamePageProps
       if (!response.ok) {
         throw new Error('ゲームリセットに失敗しました');
       }
+
+      // 通知もクリア
+      setNotifications([]);
 
       const allNumbers = Array.from({ length: 75 }, (_, i) => i + 1);
       setState(prev => ({
@@ -490,6 +631,12 @@ export default function HostGamePage({ params, searchParams }: HostGamePageProps
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-pink-500 via-purple-500 to-indigo-600 p-4">
+      {/* 通知表示 */}
+      <NotificationDisplay 
+        notifications={notifications} 
+        onDismiss={dismissNotification} 
+      />
+
       <div className="max-w-7xl mx-auto">
         {/* ヘッダー */}
         <div className="bg-white/10 backdrop-blur-md rounded-2xl shadow-2xl p-6 mb-6 border border-white/20">
@@ -651,6 +798,23 @@ export default function HostGamePage({ params, searchParams }: HostGamePageProps
         confirmText="終了する"
         confirmColor="red"
       />
+
+      {/* アニメーション用のスタイル */}
+      <style jsx>{`
+        @keyframes slide-down {
+          from {
+            opacity: 0;
+            transform: translate(-50%, -100%);
+          }
+          to {
+            opacity: 1;
+            transform: translate(-50%, 0);
+          }
+        }
+        .animate-slide-down {
+          animation: slide-down 0.3s ease-out forwards;
+        }
+      `}</style>
     </div>
   );
 }

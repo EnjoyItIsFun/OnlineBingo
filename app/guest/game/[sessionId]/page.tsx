@@ -1,7 +1,7 @@
 // app/guest/game/[sessionId]/page.tsx
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { usePusherConnection } from '@/hooks/usePusherConnection';
 import { Trophy, Crown, Users } from 'lucide-react';
@@ -37,40 +37,60 @@ const getBingoLetter = (number: number): string => {
   return '';
 };
 
-// ビンゴ判定関数
-const checkBingo = (board: BingoCell[][]): BingoCheckResult => {
-  const lines: string[] = [];
-  let count = 0;
+// ビンゴ・リーチ判定結果の型
+interface BingoReachResult extends BingoCheckResult {
+  reachCount: number;
+  reachLines: string[];
+}
+
+// ビンゴ・リーチ判定関数
+const checkBingoAndReach = (board: BingoCell[][]): BingoReachResult => {
+  const bingoLines: string[] = [];
+  const reachLines: string[] = [];
+  let bingoCount = 0;
+  let reachCount = 0;
+
+  // ラインをチェックするヘルパー関数
+  const checkLine = (cells: BingoCell[], lineName: string) => {
+    const markedCount = cells.filter(cell => cell.marked || cell.number === 0).length;
+    
+    if (markedCount === 5) {
+      // ビンゴ
+      bingoLines.push(lineName);
+      bingoCount++;
+    } else if (markedCount === 4) {
+      // リーチ（4つマーク済み、1つ未マーク）
+      reachLines.push(lineName);
+      reachCount++;
+    }
+  };
 
   // 横のチェック
   for (let row = 0; row < 5; row++) {
-    if (board[row].every(cell => cell.marked || cell.number === 0)) {
-      lines.push(`横${row + 1}列目`);
-      count++;
-    }
+    checkLine(board[row], `横${row + 1}列目`);
   }
 
   // 縦のチェック
   for (let col = 0; col < 5; col++) {
-    if (board.every(row => row[col].marked || row[col].number === 0)) {
-      lines.push(`縦${col + 1}列目`);
-      count++;
-    }
+    const columnCells = board.map(row => row[col]);
+    checkLine(columnCells, `縦${col + 1}列目`);
   }
 
   // 斜め（左上から右下）
-  if (board.every((row, i) => row[i].marked || row[i].number === 0)) {
-    lines.push('斜め（＼）');
-    count++;
-  }
+  const diagonal1 = board.map((row, i) => row[i]);
+  checkLine(diagonal1, '斜め（＼）');
 
   // 斜め（右上から左下）
-  if (board.every((row, i) => row[4 - i].marked || row[4 - i].number === 0)) {
-    lines.push('斜め（／）');
-    count++;
-  }
+  const diagonal2 = board.map((row, i) => row[4 - i]);
+  checkLine(diagonal2, '斜め（／）');
 
-  return { count, lines, newBingo: false };
+  return { 
+    count: bingoCount, 
+    lines: bingoLines, 
+    newBingo: false,
+    reachCount,
+    reachLines
+  };
 };
 
 // ランキング用プレイヤーカードコンポーネント
@@ -120,6 +140,11 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
     error: null,
     playerName: ''
   });
+
+  // リーチ状態の管理
+  const [reachCount, setReachCount] = useState(0);
+  const [showReachAnimation, setShowReachAnimation] = useState(false);
+  const hasReachedRef = useRef(false); // 初めてリーチになったかを追跡
 
   const [resolvedParams, setResolvedParams] = useState<{ sessionId: string } | null>(null);
   const [resolvedSearchParams, setResolvedSearchParams] = useState<{ playerId?: string; token?: string }| null>(null);
@@ -231,13 +256,19 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
           error: null
         }));
 
-        // 初回のビンゴチェック
-        const result = checkBingo(initialBoard);
+        // 初回のビンゴ・リーチチェック
+        const result = checkBingoAndReach(initialBoard);
         setState(prev => ({
           ...prev,
           bingoLines: result.lines,
           bingoCount: result.count
         }));
+        setReachCount(result.reachCount);
+        
+        // 既にリーチ状態なら、初回リーチフラグを立てる
+        if (result.reachCount > 0) {
+          hasReachedRef.current = true;
+        }
       } catch (error) {
         console.error('データ取得エラー:', error);
         setState(prev => ({
@@ -272,26 +303,43 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
           }))
         );
 
-        const bingoResult = checkBingo(newBoard);
-        const newBingo = bingoResult.count > prev.bingoCount;
+        const result = checkBingoAndReach(newBoard);
+        const newBingo = result.count > prev.bingoCount;
+        const newReach = !hasReachedRef.current && result.reachCount > 0;
 
         // ビンゴ達成時の処理
         if (newBingo && resolvedSearchParams?.playerId) {
           emit('bingo_achieved', {
             sessionId: resolvedParams?.sessionId || '',
             playerId: resolvedSearchParams.playerId,
-            bingoCount: bingoResult.count,
-            lines: bingoResult.lines
+            playerName: prev.playerName,
+            bingoCount: result.count,
+            lines: result.lines
           });
         }
+
+        // 初めてリーチになった時の処理
+        if (newReach && resolvedSearchParams?.playerId) {
+          hasReachedRef.current = true;
+          setShowReachAnimation(true);
+          emit('reach_achieved', {
+            sessionId: resolvedParams?.sessionId || '',
+            playerId: resolvedSearchParams.playerId,
+            playerName: prev.playerName,
+            reachCount: result.reachCount,
+            reachLines: result.reachLines
+          });
+        }
+
+        setReachCount(result.reachCount);
 
         return {
           ...prev,
           board: newBoard,
           currentNumber: data.number,
           drawnNumbers: [...prev.drawnNumbers, data.number],
-          bingoLines: bingoResult.lines,
-          bingoCount: bingoResult.count,
+          bingoLines: result.lines,
+          bingoCount: result.count,
           showBingoAnimation: newBingo
         };
       });
@@ -299,6 +347,8 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
 
     const handleGameReset = () => {
       console.log('ゲームがリセットされました');
+      hasReachedRef.current = false; // リーチフラグをリセット
+      setReachCount(0);
       setState(prev => {
         // boardが空の場合は何もしない
         if (!prev.board || prev.board.length === 0) {
@@ -385,6 +435,16 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
     }
   }, [state.showBingoAnimation]);
 
+  // リーチアニメーション制御
+  useEffect(() => {
+    if (showReachAnimation) {
+      const timer = setTimeout(() => {
+        setShowReachAnimation(false);
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [showReachAnimation]);
+
   // ランキング計算: ビンゴ達成者を最初にビンゴした順にソート
   const rankedPlayers = [...(state.session?.players || [])]
     .filter(p => p.bingoCount > 0 && p.bingoAchievedAt)
@@ -441,6 +501,17 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
         </div>
       )}
 
+      {/* リーチアニメーション（ビンゴより控えめ） */}
+      {showReachAnimation && (
+        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 animate-slide-down">
+          <div className="bg-gradient-to-r from-orange-400 to-pink-500 rounded-full px-8 py-3 shadow-lg border-2 border-white/50">
+            <p className="text-2xl font-bold text-white text-center">
+              🎯 リーチ！
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="max-w-md mx-auto">
         {/* ヘッダー */}
         <div className="bg-white/20 backdrop-blur-md rounded-lg shadow-xl p-4 mb-4 border border-white/30 relative">
@@ -490,6 +561,11 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
               {state.bingoCount > 0 && (
                 <p className="text-sm font-bold text-yellow-300">
                   {state.bingoCount}ビンゴ達成！
+                </p>
+              )}
+              {state.bingoCount === 0 && reachCount > 0 && (
+                <p className="text-sm font-bold text-orange-300">
+                  {reachCount}リーチ！
                 </p>
               )}
             </div>
@@ -616,6 +692,23 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
           </div>
         </div>
       </div>
+
+      {/* リーチアニメーション用のスタイル */}
+      <style jsx>{`
+        @keyframes slide-down {
+          from {
+            opacity: 0;
+            transform: translate(-50%, -100%);
+          }
+          to {
+            opacity: 1;
+            transform: translate(-50%, 0);
+          }
+        }
+        .animate-slide-down {
+          animation: slide-down 0.3s ease-out forwards;
+        }
+      `}</style>
     </div>
   );
 }

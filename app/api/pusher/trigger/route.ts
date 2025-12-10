@@ -1,5 +1,4 @@
 // app/api/pusher/trigger/route.ts
-
 import { NextRequest, NextResponse } from 'next/server';
 import Pusher from 'pusher';
 import { getDatabase } from '@/lib/database';
@@ -217,6 +216,40 @@ export async function POST(req: NextRequest) {
         updateSession = true;
         break;
 
+      case 'reach_achieved':
+        // リーチ達成の処理
+        const reachingPlayer = session.players.find(p => p.id === playerId);
+        if (!reachingPlayer) {
+          return NextResponse.json(
+            { error: 'Player not found' },
+            { status: 404 }
+          );
+        }
+
+        const reachData = {
+          playerId: playerId,
+          playerName: data.playerName || reachingPlayer.name,
+          reachCount: data.reachCount || 1,
+          reachLines: data.reachLines || [],
+          achievedAt: new Date().toISOString()
+        };
+        
+        // player-reachイベントとして配信
+        await pusher.trigger(
+          channelName,
+          'player-reach',
+          reachData
+        );
+        
+        debugLog(`Player ${reachingPlayer.name} achieved REACH!`);
+        
+        // リーチはDBに保存しない（一時的な状態）
+        return NextResponse.json({ 
+          success: true,
+          event: 'player-reach',
+          channel: channelName 
+        });
+
       case 'player_bingo':
         // ビンゴ宣言の処理（後方互換性のため残す）
         const player = session.players.find(p => p.id === playerId);
@@ -243,8 +276,8 @@ export async function POST(req: NextRequest) {
       ? eventName.replace('client-', '').replace(/_/g, '-')
       : eventName.replace(/_/g, '-');
 
-    // bingo_achievedは既に上で処理済みなので、ここではスキップ
-    if (eventName !== 'bingo_achieved') {
+    // bingo_achieved, reach_achievedは既に上で処理済みなので、ここではスキップ
+    if (eventName !== 'bingo_achieved' && eventName !== 'reach_achieved') {
       await pusher.trigger(
         channelName,
         pusherEventName,
