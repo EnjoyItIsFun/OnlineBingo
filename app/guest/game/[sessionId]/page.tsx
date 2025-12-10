@@ -27,16 +27,6 @@ interface SessionDataFromAPI extends Omit<GameSession, 'createdAt' | 'expiresAt'
   expiresAt: string;
 }
 
-// BINGO文字を取得する関数
-const getBingoLetter = (number: number): string => {
-  if (number >= 1 && number <= 15) return 'B';
-  if (number >= 16 && number <= 30) return 'I';
-  if (number >= 31 && number <= 45) return 'N';
-  if (number >= 46 && number <= 60) return 'G';
-  if (number >= 61 && number <= 75) return 'O';
-  return '';
-};
-
 // ビンゴ・リーチ判定結果の型
 interface BingoReachResult extends BingoCheckResult {
   reachCount: number;
@@ -141,10 +131,11 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
     playerName: ''
   });
 
-  // リーチ状態の管理
+  // リーチ・ビンゴ状態の管理
   const [reachCount, setReachCount] = useState(0);
   const [showReachAnimation, setShowReachAnimation] = useState(false);
   const hasReachedRef = useRef(false); // 初めてリーチになったかを追跡
+  const hasBingodRef = useRef(false);  // 初めてビンゴになったかを追跡
 
   const [resolvedParams, setResolvedParams] = useState<{ sessionId: string } | null>(null);
   const [resolvedSearchParams, setResolvedSearchParams] = useState<{ playerId?: string; token?: string }| null>(null);
@@ -269,6 +260,10 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
         if (result.reachCount > 0) {
           hasReachedRef.current = true;
         }
+        // 既にビンゴ状態なら、初回ビンゴフラグを立てる
+        if (result.count > 0) {
+          hasBingodRef.current = true;
+        }
       } catch (error) {
         console.error('データ取得エラー:', error);
         setState(prev => ({
@@ -304,11 +299,12 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
         );
 
         const result = checkBingoAndReach(newBoard);
-        const newBingo = result.count > prev.bingoCount;
+        const newBingo = !hasBingodRef.current && result.count > 0;
         const newReach = !hasReachedRef.current && result.reachCount > 0;
 
-        // ビンゴ達成時の処理
+        // ビンゴ達成時の処理（初めてビンゴになった時のみ）
         if (newBingo && resolvedSearchParams?.playerId) {
+          hasBingodRef.current = true;
           emit('bingo_achieved', {
             sessionId: resolvedParams?.sessionId || '',
             playerId: resolvedSearchParams.playerId,
@@ -347,7 +343,8 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
 
     const handleGameReset = () => {
       console.log('ゲームがリセットされました');
-      hasReachedRef.current = false; // リーチフラグをリセット
+      hasReachedRef.current = false;
+      hasBingodRef.current = false;
       setReachCount(0);
       setState(prev => {
         // boardが空の場合は何もしない
@@ -577,7 +574,7 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
           <div className="bg-gradient-to-r from-yellow-300 to-yellow-500 rounded-lg shadow-xl p-4 mb-4 animate-slide-in border-2 border-yellow-600">
             <p className="text-center text-purple-800 text-sm mb-1">現在の番号</p>
             <p className="text-center text-5xl font-bold text-purple-900">
-              {getBingoLetter(state.currentNumber)}-{state.currentNumber}
+              {state.currentNumber}
             </p>
           </div>
         )}
@@ -683,7 +680,7 @@ export default function GuestGamePage({ params, searchParams }: GuestGamePagePro
                       : 'bg-white/30 text-white'}
                   `}
                 >
-                  {getBingoLetter(num)}-{num}
+                  {num}
                 </span>
               ))
             ) : (

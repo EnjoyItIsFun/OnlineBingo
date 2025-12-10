@@ -343,16 +343,6 @@ export default function HostGamePage({ params, searchParams }: HostGamePageProps
   // Pusher接続
   const { isConnected, on, off, emit } = usePusherConnection(sessionId || null);
 
-  // 番号表示用のBINGO文字取得
-  const getBingoLetter = (number: number): string => {
-    if (number >= 1 && number <= 15) return 'B';
-    if (number >= 16 && number <= 30) return 'I';
-    if (number >= 31 && number <= 45) return 'N';
-    if (number >= 46 && number <= 60) return 'G';
-    if (number >= 61 && number <= 75) return 'O';
-    return '';
-  };
-
   // 通知を追加（バッファリング処理）
   const addNotification = useCallback((type: 'bingo' | 'reach', playerName: string) => {
     pendingNotificationsRef.current.push({ type, playerName });
@@ -708,9 +698,7 @@ export default function HostGamePage({ params, searchParams }: HostGamePageProps
                   <>
                     <p className="text-white/80 text-lg mb-2">現在の番号</p>
                     <div className="text-8xl font-bold text-white drop-shadow-lg">
-                      <span className="text-yellow-300">{getBingoLetter(state.currentNumber)}</span>
-                      <span className="mx-2">-</span>
-                      <span>{state.currentNumber}</span>
+                      {state.currentNumber}
                     </div>
                   </>
                 ) : (
