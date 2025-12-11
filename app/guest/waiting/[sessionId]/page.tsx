@@ -288,20 +288,23 @@ const WaitingPageContent: React.FC = () => {
   // セッション離脱処理
 // セッション離脱処理
   const handleLeaveSession = useCallback(async () => {
-    if (!session || !currentPlayer) return;
+  if (!session || !currentPlayer) return;
 
-    try {
-      await leaveSession(sessionId, currentPlayer.id, accessToken);
-      
-      // 完全退出：関連するLocalStorageをクリア
-      localStorage.removeItem('reconnectionData');
-      localStorage.removeItem(`session_${sessionId}`);
-      
-      router.push('/guest/join');
-    } catch (err) {
-      setError(normalizeErrorMessage(err));
-    }
-  }, [session, currentPlayer, sessionId, accessToken, router]);
+  try {
+    await leaveSession(sessionId, currentPlayer.id, accessToken);
+    
+    // 完全退出：関連するLocalStorage/SessionStorageをクリア
+    localStorage.removeItem('reconnectionData');
+    localStorage.removeItem(`session_${sessionId}`);
+    localStorage.removeItem('participantInfo');
+    sessionStorage.removeItem('nameAdjustment');
+    
+    // ★ router.pushではなく完全リロード
+    window.location.href = '/guest/join';
+  } catch (err) {
+    setError(normalizeErrorMessage(err));
+  }
+}, [session, currentPlayer, sessionId, accessToken]);
 
   // 再接続処理
   const handleReconnect = useCallback(() => {
