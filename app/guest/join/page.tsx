@@ -25,23 +25,40 @@ const JoinPageContent: React.FC = () => {
   const [accessToken, setAccessToken] = useState('');
   const [playerName, setPlayerName] = useState('');
 
-  // URLパラメータから初期値を取得
+  // URLパラメータまたはLocalStorageから初期値を取得
   useEffect(() => {
     const initialSessionId = searchParams.get('sessionId') || searchParams.get('session') || '';
     const initialAccessToken = searchParams.get('accessToken') || searchParams.get('token') || '';
     
-    if (initialSessionId) {
-      setSessionId(initialSessionId);
+    // URLパラメータがある場合はそちらを優先
+    if (initialSessionId || initialAccessToken) {
+      if (initialSessionId) setSessionId(initialSessionId);
+      if (initialAccessToken) setAccessToken(initialAccessToken);
+      
+      console.log('URL Parameters:', {
+        sessionId: initialSessionId,
+        accessToken: initialAccessToken
+      });
+    } else {
+      // URLパラメータがない場合はLocalStorageから復元
+      const savedInfo = localStorage.getItem('participantInfo');
+      if (savedInfo) {
+        try {
+          const parsed = JSON.parse(savedInfo);
+          if (parsed.sessionId) setSessionId(parsed.sessionId);
+          if (parsed.accessToken) setAccessToken(parsed.accessToken);
+          if (parsed.playerName) setPlayerName(parsed.playerName);
+          
+          console.log('Restored from participantInfo:', {
+            sessionId: parsed.sessionId,
+            accessToken: parsed.accessToken,
+            playerName: parsed.playerName
+          });
+        } catch (e) {
+          console.error('Failed to parse participantInfo:', e);
+        }
+      }
     }
-    if (initialAccessToken) {
-      setAccessToken(initialAccessToken);
-    }
-
-    // デバッグログ
-    console.log('URL Parameters:', {
-      sessionId: initialSessionId,
-      accessToken: initialAccessToken
-    });
   }, [searchParams]);
 
   // セッション参加処理（認証スキップ版）
@@ -84,7 +101,7 @@ const JoinPageContent: React.FC = () => {
       if (response.nameAdjustment) {
         setAdjustment(response.nameAdjustment);
         
-        // LocalStorageに保存（後で通知表示用）
+        // SessionStorageに保存（後で通知表示用）
         sessionStorage.setItem('nameAdjustment', JSON.stringify(response.nameAdjustment));
       }
 
@@ -154,7 +171,7 @@ const JoinPageContent: React.FC = () => {
                   id="sessionId"
                   value={sessionId}
                   onChange={(e) => setSessionId(e.target.value.toUpperCase())}
-                  placeholder="M9CFU4"
+                  placeholder="例：M9CFU4"
                   maxLength={6}
                   className="w-full px-4 py-3 bg-white/20 backdrop-blur-sm border border-white/40 rounded-lg text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent transition-all"
                   disabled={isLoading}
@@ -172,7 +189,7 @@ const JoinPageContent: React.FC = () => {
                   id="accessToken"
                   value={accessToken}
                   onChange={(e) => setAccessToken(e.target.value)}
-                  placeholder="1R2SGFHX"
+                  placeholder="例：1R2SGFHX"
                   className="w-full px-4 py-3 bg-white/20 backdrop-blur-sm border border-white/40 rounded-lg text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent transition-all"
                   disabled={isLoading}
                   required
