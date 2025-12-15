@@ -693,7 +693,7 @@ function WaitingContent() {
             {/* バックグラウンドでも大丈夫という説明 */}
             <div className="mt-4 p-3 bg-blue-500/20 backdrop-blur-sm rounded-lg border border-blue-400/30">
               <p className="text-white/90 text-sm text-center">
-                💡 参加者が他のアプリを見ていても、ゲーム開始すると自動でゲーム画面に移動します
+                💡 参加者が裏画面でもゲーム開始すると自動でゲーム画面に移動します
               </p>
             </div>
 
