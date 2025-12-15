@@ -1,12 +1,13 @@
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useState, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Users, Copy, CheckCircle, Wifi, WifiOff, AlertCircle, RefreshCw, MoreVertical } from 'lucide-react';
 import QRCode from 'qrcode';
 import { getClientBaseUrl, createParticipationUrl } from '@/utils/url';
 import { usePusherConnection } from '@/hooks/usePusherConnection';
-import type { RealtimeMemberInfo } from '@/types';
+import { getSession, normalizeErrorMessage } from '@/utils/api';
+import type { GameSession } from '@/types';
 
 interface SessionInfo {
   sessionId: string;
@@ -16,12 +17,6 @@ interface SessionInfo {
   maxPlayers: number;
   participationUrl: string;
   qrCodeDataUrl: string;
-}
-
-interface Player {
-  id: string;
-  name: string;
-  isHost?: boolean;
 }
 
 function WaitingContent() {
@@ -39,7 +34,8 @@ function WaitingContent() {
   const [hostId, setHostId] = useState<string>('');
   
   const [sessionInfo, setSessionInfo] = useState<SessionInfo | null>(null);
-  const [players, setPlayers] = useState<Player[]>([]);
+  // DBから取得したセッション情報
+  const [session, setSession] = useState<GameSession | null>(null);
   const [copied, setCopied] = useState<'sessionId' | 'accessToken' | 'url' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
@@ -145,7 +141,58 @@ function WaitingContent() {
   // Pusher接続（sessionIdが確定してから）
   const { isConnected, emit, on, off, members } = usePusherConnection(sessionId || null);
 
-  // セッション情報の生成
+  // APIから参加者リストを取得する関数
+  const fetchSessionData = useCallback(async () => {
+    if (!sessionId || !accessToken) return;
+    
+    try {
+      console.log('APIからセッション情報を取得中...');
+      const sessionData = await getSession(sessionId, accessToken);
+      console.log('セッション情報取得完了:', sessionData);
+      setSession(sessionData);
+      setError(null);
+    } catch (err) {
+      console.error('セッション情報の取得に失敗:', err);
+      const errorMessage = normalizeErrorMessage(err);
+      if (errorMessage.includes('見つかりません') || errorMessage.includes('期限切れ')) {
+        setError('セッションが終了しました');
+      }
+    }
+  }, [sessionId, accessToken]);
+
+  // 初期データ読み込み
+  useEffect(() => {
+    if (sessionId && accessToken && !isInitializing) {
+      fetchSessionData();
+    }
+  }, [sessionId, accessToken, isInitializing, fetchSessionData]);
+
+  // フォアグラウンド復帰時にセッション状態を再取得
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && sessionId && accessToken) {
+        console.log('=== ホスト: フォアグラウンド復帰を検知 ===');
+        fetchSessionData();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [sessionId, accessToken, fetchSessionData]);
+
+  // 定期的に参加者リストを更新（30秒ごと）
+  useEffect(() => {
+    if (!sessionId || !accessToken || isInitializing) return;
+
+    const interval = setInterval(() => {
+      console.log('定期ポーリング: 参加者リスト更新');
+      fetchSessionData();
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [sessionId, accessToken, isInitializing, fetchSessionData]);
+
+  // セッション情報の生成（QRコード等）
   useEffect(() => {
     if (!sessionId || !accessToken || !hostId) {
       console.log('セッション情報生成スキップ（パラメータ不足）');
@@ -212,7 +259,7 @@ function WaitingContent() {
     });
   }, [sessionId, accessToken, hostId]);
 
-  // Pusherイベントリスナー設定とメンバー管理
+  // Pusherイベントリスナー設定（参加者追加/離脱時にAPIから再取得）
   useEffect(() => {
     if (!isConnected || !sessionId) {
       console.log('Pusherイベント設定スキップ（未接続）');
@@ -223,46 +270,16 @@ function WaitingContent() {
     console.log('Pusher接続状態:', isConnected);
     console.log('現在のメンバー数:', members?.size || 0);
 
-    // プレゼンスチャンネルのメンバーから参加者リストを構築
-    if (members && members.size > 0) {
-      const playersList: Player[] = Array.from(members.entries()).map(([id, memberInfo]) => ({
-        id: id,
-        name: memberInfo.name || 'Unknown',
-        isHost: memberInfo.role === 'host'
-      }));
-      setPlayers(playersList);
-      console.log('メンバーリスト更新:', playersList);
-    }
-
     const handlePlayerJoined = (data: unknown) => {
       console.log('player_joined イベント受信:', data);
-      const memberInfo = data as RealtimeMemberInfo;
-      if (memberInfo && memberInfo.id) {
-        const newPlayer: Player = {
-          id: memberInfo.id,
-          name: memberInfo.name || 'Unknown',
-          isHost: memberInfo.role === 'host'
-        };
-        setPlayers(prev => {
-          // 重複を防ぐ
-          if (prev.some(p => p.id === newPlayer.id)) {
-            console.log('既存のプレイヤーのため追加をスキップ:', newPlayer.id);
-            return prev;
-          }
-          console.log('新しいプレイヤーを追加:', newPlayer);
-          return [...prev, newPlayer];
-        });
-      }
+      // APIから最新の参加者リストを取得
+      fetchSessionData();
     };
 
-    const handlePlayerLeft = (playerId: unknown) => {
-      console.log('player_left イベント受信:', playerId);
-      if (typeof playerId === 'string') {
-        setPlayers(prev => prev.filter(p => p.id !== playerId));
-      } else if (typeof playerId === 'object' && playerId !== null && 'id' in playerId) {
-        const id = (playerId as { id: string }).id;
-        setPlayers(prev => prev.filter(p => p.id !== id));
-      }
+    const handlePlayerLeft = (data: unknown) => {
+      console.log('player_left イベント受信:', data);
+      // APIから最新の参加者リストを取得
+      fetchSessionData();
     };
 
     on('player_joined', handlePlayerJoined);
@@ -272,7 +289,7 @@ function WaitingContent() {
       off('player_joined', handlePlayerJoined);
       off('player_left', handlePlayerLeft);
     };
-  }, [isConnected, sessionId, members, on, off]);
+  }, [isConnected, sessionId, members, on, off, fetchSessionData]);
 
   // デバッグ情報の定期出力
   useEffect(() => {
@@ -282,14 +299,15 @@ function WaitingContent() {
       console.log('AccessToken:', accessToken);
       console.log('HostId:', hostId);
       console.log('SessionInfo:', sessionInfo ? '設定済み' : '未設定');
+      console.log('Session(API):', session ? `参加者${session.players.length}人` : '未取得');
       console.log('Pusher接続:', isConnected);
-      console.log('参加者数:', players.length);
+      console.log('Pusherメンバー数:', members?.size || 0);
       console.log('エラー:', error);
       console.log('==================');
     }, 10000); // 10秒ごと
 
     return () => clearInterval(interval);
-  }, [sessionId, accessToken, hostId, sessionInfo, isConnected, players.length, error]);
+  }, [sessionId, accessToken, hostId, sessionInfo, session, isConnected, members, error]);
 
   const handleCopy = async (text: string, type: 'sessionId' | 'accessToken' | 'url') => {
     try {
@@ -302,10 +320,10 @@ function WaitingContent() {
   };
 
   const handleStartGame = async () => {
-    if (!sessionInfo || players.length < 2) return;  // ホスト以外に1人以上必要
+    if (!sessionInfo || !session || session.players.length < 2) return;
     
     console.log('ゲーム開始処理を実行');
-    setError(null);  // エラーをクリア
+    setError(null);
     
     try {
       // 1. Pusher APIを使用してゲーム開始イベントを確実に送信
@@ -336,7 +354,7 @@ function WaitingContent() {
       // 2. 既存のemitも念のため実行
       await emit('start_game', { sessionId: sessionInfo.sessionId });
       
-      // 3. ゲーム画面へ遷移（パラメータ名を修正: accessToken → token）
+      // 3. ゲーム画面へ遷移
       setTimeout(() => {
         const gameUrl = `/host/game/${sessionInfo.sessionId}?token=${sessionInfo.accessToken}&hostId=${sessionInfo.hostId}`;
         console.log('ゲーム画面へ遷移:', gameUrl);
@@ -349,7 +367,6 @@ function WaitingContent() {
     }
   };
 
-  // handleRetryはそのまま残す
   const handleRetry = () => {
     console.log('再試行を実行');
     window.location.reload();
@@ -369,6 +386,12 @@ function WaitingContent() {
     
     // トップページへ遷移
     router.push('/');
+  };
+
+  // オンライン状態を判定する関数（ホスト用：控えめなインジケーター表示用）
+  const isPlayerOnline = (playerId: string): boolean => {
+    if (!members) return false;
+    return members.has(playerId);
   };
 
   // 初期化中の表示
@@ -429,6 +452,9 @@ function WaitingContent() {
       </div>
     );
   }
+
+  // 参加者リストはsession.playersを使用
+  const players = session?.players || [];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-pink-500 via-red-500 to-orange-500 p-4">
@@ -632,28 +658,47 @@ function WaitingContent() {
                 </div>
               ) : (
                 <div className="grid gap-3">
-                  {players.map((player, index) => (
-                    <div
-                      key={player.id}
-                      className="flex items-center gap-3 p-3 bg-white/10 backdrop-blur-sm rounded-lg border border-white/20 hover:bg-white/15 transition-colors"
-                    >
-                      <div className="w-10 h-10 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-full flex items-center justify-center text-white font-bold shadow-md">
-                        {index + 1}
-                      </div>
-                      <span className="text-white font-medium text-lg flex-1">{player.name}</span>
-                      {player.isHost && (
-                        <span className="px-3 py-1 bg-yellow-400/30 backdrop-blur-sm rounded-full text-yellow-200 text-sm font-medium">
-                          ホスト
+                  {players.map((player, index) => {
+                    const online = isPlayerOnline(player.id);
+                    return (
+                      <div
+                        key={player.id}
+                        className="flex items-center gap-3 p-3 bg-white/10 backdrop-blur-sm rounded-lg border border-white/20 hover:bg-white/15 transition-colors"
+                      >
+                        <div className="w-10 h-10 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-full flex items-center justify-center text-white font-bold shadow-md">
+                          {index + 1}
+                        </div>
+                        <span className="text-white font-medium text-lg flex-1">
+                          {player.name}
                         </span>
-                      )}
-                    </div>
-                  ))}
+                        <div className="flex items-center gap-2">
+                          {player.id === hostId && (
+                            <span className="px-3 py-1 bg-yellow-400/30 backdrop-blur-sm rounded-full text-yellow-200 text-sm font-medium">
+                              ホスト
+                            </span>
+                          )}
+                          {/* 控えめなオンラインインジケーター */}
+                          <div 
+                            className={`w-2 h-2 rounded-full ${online ? 'bg-green-400' : 'bg-gray-400'}`}
+                            title={online ? '画面を見ています' : '他のアプリを見ています'}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
 
+            {/* バックグラウンドでも大丈夫という説明 */}
+            <div className="mt-4 p-3 bg-blue-500/20 backdrop-blur-sm rounded-lg border border-blue-400/30">
+              <p className="text-white/90 text-sm text-center">
+                💡 参加者が他のアプリを見ていても、ゲーム開始すると自動でゲーム画面に移動します
+              </p>
+            </div>
+
             {/* ゲーム開始ボタン */}
-            <div className="mt-6">
+            <div className="mt-4">
               <button
                 onClick={handleStartGame}
                 disabled={players.length < 2}

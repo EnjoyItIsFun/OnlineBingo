@@ -54,10 +54,6 @@ const PlayerCard: React.FC<{
             )}
           </div>
         </div>
-        <div className={`
-          w-3 h-3 rounded-full
-          ${player.isConnected ? 'bg-green-400' : 'bg-gray-400'}
-        `} />
       </div>
     </div>
   );
@@ -78,7 +74,7 @@ const WaitingPageContent: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // ★ joinGame送信済みフラグ
+  // joinGame送信済みフラグ
   const hasJoinedRef = useRef(false);
 
   const { nameAdjustment, setAdjustment, acknowledgeAdjustment } = useNameAdjustment();
@@ -87,7 +83,7 @@ const WaitingPageContent: React.FC = () => {
     7200 // 2時間
   );
 
-  // ★ Pusher認証用のreconnectionDataを最初に設定
+  // Pusher認証用のreconnectionDataを最初に設定
   useEffect(() => {
     if (sessionId && accessToken && playerId) {
       const reconnectionData = {
@@ -120,7 +116,7 @@ const WaitingPageContent: React.FC = () => {
         const sessionData = await getSession(sessionId, accessToken);
         setSession(sessionData);
 
-        // ★ 既にゲームが開始されている場合は即座に遷移
+        // 既にゲームが開始されている場合は即座に遷移
         if (sessionData.status === 'playing') {
           console.log('ゲームは既に開始されています。ゲーム画面へ遷移します。');
           router.push(`/guest/game/${sessionId}?playerId=${playerId}&token=${accessToken}`);
@@ -160,7 +156,7 @@ const WaitingPageContent: React.FC = () => {
     loadInitialData();
   }, [sessionId, accessToken, playerId, setAdjustment, router]);
 
-  // ★ 接続後、joinGameイベントを一度だけ送信
+  // 接続後、joinGameイベントを一度だけ送信
   useEffect(() => {
     if (!isConnected || !playerId || hasJoinedRef.current) return;
 
@@ -175,7 +171,7 @@ const WaitingPageContent: React.FC = () => {
     console.log(`Connected via ${connectionType.toUpperCase()} - joinGame sent once`);
   }, [isConnected, sessionId, playerId, emit, connectionType]);
 
-  // ★★★ 追加: フォアグラウンド復帰時にセッション状態を再取得 ★★★
+  // フォアグラウンド復帰時にセッション状態を再取得
   useEffect(() => {
     const handleVisibilityChange = async () => {
       if (document.visibilityState === 'visible' && sessionId && accessToken) {
@@ -248,7 +244,7 @@ const WaitingPageContent: React.FC = () => {
       });
     };
 
-    // ★ game-started イベントハンドラー（ハイフン版も登録）
+    // game-started イベントハンドラー（ハイフン版も登録）
     const handleGameStarted = (data: unknown) => {
       console.log('=== game-started イベント受信 ===');
       console.log('受信データ:', data);
@@ -298,7 +294,7 @@ const WaitingPageContent: React.FC = () => {
     };
 
     // イベントリスナー登録
-    // ★ 重要: アンダースコア版とハイフン版の両方を登録
+    // 重要: アンダースコア版とハイフン版の両方を登録
     on('player_joined', handlePlayerJoined);
     on('player-joined', handlePlayerJoined);
     on('player_left', handlePlayerLeft);
@@ -401,9 +397,6 @@ const WaitingPageContent: React.FC = () => {
           <p className="text-white/90 text-lg">
             セッションID: <span className="font-mono bg-white/20 px-3 py-1 rounded-lg">{session.sessionId}</span>
           </p>
-          <p className="text-white/70 text-sm mt-1">
-            接続方式: {connectionType.toUpperCase()}
-          </p>
         </div>
 
         {/* ステータスカード */}
@@ -433,14 +426,14 @@ const WaitingPageContent: React.FC = () => {
                 <>
                   <Wifi className="w-8 h-8 text-green-400 mx-auto mb-2" />
                   <div className="text-2xl font-bold text-white drop-shadow-md">
-                    オンライン
+                    接続中
                   </div>
                 </>
               ) : (
                 <>
                   <WifiOff className="w-8 h-8 text-red-400 mx-auto mb-2" />
                   <div className="text-xl font-bold text-white drop-shadow-md">
-                    オフライン
+                    再接続中
                   </div>
                 </>
               )}
@@ -477,6 +470,13 @@ const WaitingPageContent: React.FC = () => {
               </p>
             </div>
           </div>
+        </div>
+
+        {/* バックグラウンドでも大丈夫という説明 */}
+        <div className="mb-6 p-4 bg-blue-500/20 backdrop-blur-sm rounded-xl border border-blue-400/30">
+          <p className="text-white/90 text-sm text-center">
+            💡 他のアプリを見ていても大丈夫です。ゲームが始まると自動でゲーム画面に移動します
+          </p>
         </div>
 
         {/* プレイヤーリスト */}
