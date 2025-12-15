@@ -64,7 +64,6 @@ const PlayerCard: React.FC<{
 };
 
 // 待機ページのメインコンポーネント
-// 待機ページのメインコンポーネント
 const WaitingPageContent: React.FC = () => {
   const params = useParams();
   const searchParams = useSearchParams();
@@ -79,7 +78,7 @@ const WaitingPageContent: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // ★ 追加: joinGame送信済みフラグ
+  // ★ joinGame送信済みフラグ
   const hasJoinedRef = useRef(false);
 
   const { nameAdjustment, setAdjustment, acknowledgeAdjustment } = useNameAdjustment();
@@ -88,7 +87,7 @@ const WaitingPageContent: React.FC = () => {
     7200 // 2時間
   );
 
-  // ★ 追加: Pusher認証用のreconnectionDataを最初に設定
+  // ★ Pusher認証用のreconnectionDataを最初に設定
   useEffect(() => {
     if (sessionId && accessToken && playerId) {
       const reconnectionData = {
@@ -121,7 +120,7 @@ const WaitingPageContent: React.FC = () => {
         const sessionData = await getSession(sessionId, accessToken);
         setSession(sessionData);
 
-        // ★ 追加: 既にゲームが開始されている場合は即座に遷移
+        // ★ 既にゲームが開始されている場合は即座に遷移
         if (sessionData.status === 'playing') {
           console.log('ゲームは既に開始されています。ゲーム画面へ遷移します。');
           router.push(`/guest/game/${sessionId}?playerId=${playerId}&token=${accessToken}`);
@@ -161,7 +160,7 @@ const WaitingPageContent: React.FC = () => {
     loadInitialData();
   }, [sessionId, accessToken, playerId, setAdjustment, router]);
 
-  // ★ 修正: 接続後、joinGameイベントを一度だけ送信
+  // ★ 接続後、joinGameイベントを一度だけ送信
   useEffect(() => {
     if (!isConnected || !playerId || hasJoinedRef.current) return;
 
@@ -175,6 +174,48 @@ const WaitingPageContent: React.FC = () => {
     
     console.log(`Connected via ${connectionType.toUpperCase()} - joinGame sent once`);
   }, [isConnected, sessionId, playerId, emit, connectionType]);
+
+  // ★★★ 追加: フォアグラウンド復帰時にセッション状態を再取得 ★★★
+  useEffect(() => {
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === 'visible' && sessionId && accessToken) {
+        console.log('=== フォアグラウンド復帰を検知 ===');
+        
+        try {
+          const sessionData = await getSession(sessionId, accessToken);
+          console.log('セッション状態:', sessionData.status);
+          
+          if (sessionData.status === 'playing') {
+            console.log('ゲームは既に開始済み。ゲーム画面へ遷移');
+            router.push(`/guest/game/${sessionId}?playerId=${playerId}&token=${accessToken}`);
+          } else if (sessionData.status === 'finished') {
+            console.log('ゲームは終了済み。リザルト画面へ遷移');
+            router.push(`/guest/result/${sessionId}?playerId=${playerId}&token=${accessToken}`);
+          } else {
+            // 待機中の場合、参加者リストを更新
+            console.log('待機中。参加者リストを更新');
+            setSession(sessionData);
+            
+            // 現在のプレイヤー情報も更新
+            const player = sessionData.players.find((p: Player) => p.id === playerId);
+            if (player) {
+              setCurrentPlayer(player);
+            }
+          }
+        } catch (err) {
+          console.error('セッション状態の再取得に失敗:', err);
+          // セッションが見つからない場合はエラー表示
+          const errorMessage = normalizeErrorMessage(err);
+          if (errorMessage.includes('見つかりません') || errorMessage.includes('期限切れ')) {
+            setError('セッションが終了しました');
+          }
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [sessionId, accessToken, playerId, router]);
 
   // リアルタイムイベントリスナー設定
   useEffect(() => {
@@ -207,7 +248,7 @@ const WaitingPageContent: React.FC = () => {
       });
     };
 
-    // ★ 修正: game-started イベントハンドラー（ハイフン版も登録）
+    // ★ game-started イベントハンドラー（ハイフン版も登録）
     const handleGameStarted = (data: unknown) => {
       console.log('=== game-started イベント受信 ===');
       console.log('受信データ:', data);
@@ -263,9 +304,9 @@ const WaitingPageContent: React.FC = () => {
     on('player_left', handlePlayerLeft);
     on('player-left', handlePlayerLeft);
     on('game_started', handleGameStarted);
-    on('game-started', handleGameStarted);  // ★ ハイフン版も追加
+    on('game-started', handleGameStarted);
     on('session_updated', handleSessionUpdated);
-    on('session-updated', handleSessionUpdated);  // ★ ハイフン版も追加
+    on('session-updated', handleSessionUpdated);
     on('connection_error', handleConnectionError);
     on('session_cancelled', handleSessionCancelled);
 
@@ -301,10 +342,10 @@ const WaitingPageContent: React.FC = () => {
     }
   }, [session, currentPlayer, sessionId, accessToken, router]);
 
-    // 再接続処理
-    const handleReconnect = useCallback(() => {
-      reconnect();
-    }, [reconnect]);
+  // 再接続処理
+  const handleReconnect = useCallback(() => {
+    reconnect();
+  }, [reconnect]);
 
   // ローディング画面
   if (isLoading) {
