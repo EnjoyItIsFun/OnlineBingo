@@ -10,6 +10,7 @@
     "db:init": "tsx scripts/safe-init-db.ts"
   },
   "dependencies": {
+    "@vercel/analytics": "^1.6.1",
     "lucide-react": "^0.525.0",
     "mongodb": "^6.17.0",
     "next": "^15.5.7",
